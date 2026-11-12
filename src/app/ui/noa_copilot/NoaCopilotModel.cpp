@@ -1772,7 +1772,7 @@ double NoaCopilotModel::currentChartBpm() const
             return parsed;
         }
     }
-    return 160.0;
+    return 120.0;
 }
 
 double NoaCopilotModel::currentChartFirstSeconds() const
@@ -1796,7 +1796,7 @@ double NoaCopilotModel::parseLevelNumeric(const QString& levelText) const
         return 13.0;
     }
     if (hasPlus && qFloor(val) == val) {
-        val += 0.6;
+        val += 0.7;
     }
     return qBound(1.0, val, 15.0);
 }
