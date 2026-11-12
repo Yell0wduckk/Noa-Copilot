@@ -644,10 +644,11 @@ if (Test-Path $ffmpegSrc) {
     throw "Missing required ffmpeg binary: $ffmpegSrc"
 }
 
-# Stage the inference service beside the actual executable inside app/.
-$stageNoaScript = Join-Path $PSScriptRoot "stage-noa-copilot.ps1"
-if (Test-Path $stageNoaScript) {
-    & $stageNoaScript -DistDir $appDir
+# Include the provisioned x64 inference bundle in local desktop distributions.
+# Upstream builds and ARM64 packages can still use an external interpreter.
+$spineModels = if ($env:MIACODE_SPINE_MODELS) { $env:MIACODE_SPINE_MODELS } else { Join-Path $repoRoot "third_party/spine417-features" }
+if ($Arch -eq "x64" -and ($env:MIACODE_SPINE_MODELS -or (Test-Path -LiteralPath $spineModels))) {
+    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -ModelsSource $spineModels
 }
 
 # Required package contents come from the toolchain data file.
