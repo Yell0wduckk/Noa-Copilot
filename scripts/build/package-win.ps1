@@ -7,6 +7,7 @@ param(
     [string]$BuildDir = "build",
     [string]$DistDir = "",
     [switch]$IncludeDevTools,
+    [int]$ArchiveCompression = 9,
     [int]$BuildJobs = [Environment]::ProcessorCount
 )
 
@@ -643,10 +644,10 @@ if (Test-Path $ffmpegSrc) {
     throw "Missing required ffmpeg binary: $ffmpegSrc"
 }
 
-# Stage NoaCopilot runtime (inference source, v2 resources, checkpoints folder, and optional portable Python+PyTorch env)
+# Stage the inference service beside the actual executable inside app/.
 $stageNoaScript = Join-Path $PSScriptRoot "stage-noa-copilot.ps1"
 if (Test-Path $stageNoaScript) {
-    & $stageNoaScript -DistDir $DistDir
+    & $stageNoaScript -DistDir $appDir
 }
 
 # Required package contents come from the toolchain data file.
@@ -679,7 +680,7 @@ foreach ($archiveFormat in $archiveFormats) {
                 Push-Location $archiveParentDir
                 try {
                     Invoke-NativeCommand -FilePath $sevenZip.Source -Arguments @(
-                        "a", "-t7z", "-mx=9", "-mmt=on", "-bso0", "-bsp0", $archivePath, $archiveFolderName
+                        "a", "-t7z", "-mx=$ArchiveCompression", "-mmt=$BuildJobs", "-bso0", "-bsp0", $archivePath, $archiveFolderName
                     ) | Out-Host
                 } finally {
                     Pop-Location

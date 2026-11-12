@@ -1125,6 +1125,36 @@ AppDialog {
                                     onPicked: value => { if (root.noaCopilot) root.noaCopilot.deviceMode = value }
                                 }
 
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: root.noaCopilot && root.noaCopilot.deviceMode === "cuda" && root.noaCopilot.envMode === "bundled"
+                                    Text {
+                                        Layout.preferredWidth: root.settingsLabelWidth
+                                        text: "WSL 发行版"
+                                        color: Theme.colors.text.secondary
+                                    }
+                                    AppTextField {
+                                        Layout.fillWidth: true
+                                        text: root.noaCopilot ? root.noaCopilot.wslDistribution : ""
+                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.wslDistribution = text
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: root.noaCopilot && root.noaCopilot.deviceMode === "cuda" && root.noaCopilot.envMode === "bundled"
+                                    Text {
+                                        Layout.preferredWidth: root.settingsLabelWidth
+                                        text: "WSL CUDA Python"
+                                        color: Theme.colors.text.secondary
+                                    }
+                                    AppTextField {
+                                        Layout.fillWidth: true
+                                        text: root.noaCopilot ? root.noaCopilot.wslPython : ""
+                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.wslPython = text
+                                    }
+                                }
+
                                 PreferenceCombo {
                                     label: "推理精度"
                                     options: root.noaCopilot ? root.noaCopilot.precisionModeOptions : []
@@ -1227,7 +1257,7 @@ AppDialog {
 
                                 PreferenceSlider {
                                     label: "采样温度"
-                                    from: 0.1
+                                    from: 0.0
                                     to: 2.0
                                     stepSize: 0.05
                                     decimals: 2
@@ -1236,49 +1266,6 @@ AppDialog {
                                     onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                                 }
 
-                                PreferenceSlider {
-                                    label: "Top-K"
-                                    from: 0
-                                    to: 128
-                                    stepSize: 4
-                                    decimals: 0
-                                    suffix: ""
-                                    value: root.noaCopilot ? root.noaCopilot.topK : 32
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.topK = Math.round(v) }
-                                }
-
-                                PreferenceSlider {
-                                    label: "Top-P"
-                                    from: 0.1
-                                    to: 1.0
-                                    stepSize: 0.02
-                                    decimals: 2
-                                    suffix: ""
-                                    value: root.noaCopilot ? root.noaCopilot.topP : 0.94
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.topP = v }
-                                }
-
-                                PreferenceSlider {
-                                    label: "重复惩罚"
-                                    from: 1.0
-                                    to: 1.5
-                                    stepSize: 0.02
-                                    decimals: 2
-                                    suffix: ""
-                                    value: root.noaCopilot ? root.noaCopilot.repetitionPenalty : 1.08
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.repetitionPenalty = v }
-                                }
-
-                                PreferenceSlider {
-                                    label: "最大并发 Slide 判定区"
-                                    from: 1
-                                    to: 8
-                                    stepSize: 1
-                                    decimals: 0
-                                    suffix: ""
-                                    value: root.noaCopilot ? root.noaCopilot.maxSlideJudgeAreas : 4
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.maxSlideJudgeAreas = Math.round(v) }
-                                }
                             }
 
                             PreferenceGroup {

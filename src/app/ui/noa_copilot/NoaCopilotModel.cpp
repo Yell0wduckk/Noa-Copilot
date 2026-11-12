@@ -16,6 +16,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QMetaObject>
@@ -52,21 +53,6 @@ QString formatBytesText(qint64 bytes)
         return QStringLiteral("%1 MB").arg(mb, 0, 'f', 1);
     }
     return QStringLiteral("%1 GB").arg(mb / 1024.0, 0, 'f', 2);
-}
-
-QString findWorkspaceDevPath(const QString& relativeSuffix)
-{
-    QDir dir(QCoreApplication::applicationDirPath());
-    for (int depth = 0; depth < 8; ++depth) {
-        const QString candidate = QDir::cleanPath(dir.filePath(relativeSuffix));
-        if (QFileInfo::exists(candidate)) {
-            return candidate;
-        }
-        if (!dir.cdUp()) {
-            break;
-        }
-    }
-    return QString();
 }
 
 QString normalizeModeToken(const QString& rawMode)
@@ -175,23 +161,8 @@ QString NoaCopilotModel::resolvedPythonPath() const
     if (pythonMode_ == QStringLiteral("custom") && !customPythonPath_.trimmed().isEmpty()) {
         return QDir::cleanPath(customPythonPath_.trimmed());
     }
-    const QString builtinPython = QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe"));
-    if (QFileInfo::exists(builtinPython)) {
-        return QDir::cleanPath(builtinPython);
-    }
-    // Development workspace fallbacks
-    const QString pathPython = QStandardPaths::findExecutable(QStringLiteral("python"));
-    if (!pathPython.isEmpty() && QFileInfo::exists(pathPython)) {
-        return QDir::cleanPath(pathPython);
-    }
-    if (QFileInfo::exists(QStringLiteral("D:/Anaconda/python.exe"))) {
-        return QStringLiteral("D:/Anaconda/python.exe");
-    }
-    const QString venvDefault = findWorkspaceDevPath(QStringLiteral(".venv/Scripts/python.exe"));
-    if (!venvDefault.isEmpty()) {
-        return venvDefault;
-    }
-    return QDir::cleanPath(builtinPython);
+    if (usesWsl()) return wslPython_;
+    return QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe"));
 }
 
 QString NoaCopilotModel::resolvedSourceRoot() const
@@ -204,72 +175,7 @@ QString NoaCopilotModel::resolvedSourceRoot() const
         }
         return custom;
     }
-    const QString builtinSrc = QDir(defaultBuiltinRoot()).filePath(QStringLiteral("runtime-src"));
-    if (QFileInfo::exists(QDir(builtinSrc).filePath(QStringLiteral("maidata")))) {
-        return QDir::cleanPath(builtinSrc);
-    }
-    const QString devWorktreeSrc = findWorkspaceDevPath(
-        QStringLiteral("repos-0wd-v3/worktrees/v11-compact-spec/src"));
-    if (!devWorktreeSrc.isEmpty()) {
-        return devWorktreeSrc;
-    }
-    return QDir::cleanPath(builtinSrc);
-}
-
-QString NoaCopilotModel::resolvedResourcesDir() const
-{
-    const QString builtinRes = QDir(defaultBuiltinRoot()).filePath(QStringLiteral("resources/v2"));
-    if (QFileInfo::exists(builtinRes)) {
-        return QDir::cleanPath(builtinRes);
-    }
-    const QString devRes = findWorkspaceDevPath(QStringLiteral("tools/MiaCode-1.2.0/assets/ai-chart"));
-    if (!devRes.isEmpty()) {
-        return devRes;
-    }
-    return QDir::cleanPath(builtinRes);
-}
-
-QString NoaCopilotModel::resolvedSlideDataPath() const
-{
-    const QString inRes = QDir(resolvedResourcesDir()).filePath(QStringLiteral("slide_data.json"));
-    if (QFileInfo::exists(inRes)) {
-        return QDir::cleanPath(inRes);
-    }
-    const QString inSrc = QDir(resolvedSourceRoot()).filePath(QStringLiteral("maidata/slide_data.json"));
-    if (QFileInfo::exists(inSrc)) {
-        return QDir::cleanPath(inSrc);
-    }
-    return QDir::cleanPath(inRes);
-}
-
-QString NoaCopilotModel::resolvedGeometryDir() const
-{
-    const QString inRes = QDir(resolvedResourcesDir()).filePath(QStringLiteral("path-catalog"));
-    if (QFileInfo::exists(inRes)) {
-        return QDir::cleanPath(inRes);
-    }
-    const QString devCatalog = findWorkspaceDevPath(
-        QStringLiteral("tools/MiaCode-1.2.0/assets/ai-chart/path-catalog"));
-    if (!devCatalog.isEmpty()) {
-        return devCatalog;
-    }
-    return QDir::cleanPath(inRes);
-}
-
-QString NoaCopilotModel::resolvedStatsDir() const
-{
-    const QString builtinRes = QDir(defaultBuiltinRoot()).filePath(QStringLiteral("resources/v2"));
-    if (QFileInfo::exists(QDir(builtinRes).filePath(QStringLiteral("compactspec-stats.json")))
-        || QFileInfo::exists(QDir(builtinRes).filePath(QStringLiteral("logspec-ms-stats.json")))
-        || QFileInfo::exists(QDir(builtinRes).filePath(QStringLiteral("stats.json")))) {
-        return QDir::cleanPath(builtinRes);
-    }
-    const QString devCompactStats = findWorkspaceDevPath(
-        QStringLiteral("repos-0wd-v3/worktrees/v11-compact-spec/.test-temp/compactspec-real-smoke/output"));
-    if (!devCompactStats.isEmpty() && QFileInfo::exists(QDir(devCompactStats).filePath(QStringLiteral("stats.json")))) {
-        return devCompactStats;
-    }
-    return resolvedResourcesDir();
+    return QDir(defaultBuiltinRoot()).filePath(QStringLiteral("runtime-src"));
 }
 
 QString NoaCopilotModel::resolvedCacheDir() const
@@ -279,24 +185,6 @@ QString NoaCopilotModel::resolvedCacheDir() const
         return QDir::cleanPath(QDir(appData).filePath(QStringLiteral("noa-copilot/cache")));
     }
     return QDir::cleanPath(QDir(defaultBuiltinRoot()).filePath(QStringLiteral("cache")));
-}
-
-QString NoaCopilotModel::resolvedFfmpegPath() const
-{
-    const QDir appDir(QCoreApplication::applicationDirPath());
-    const QStringList candidates = {
-        appDir.filePath(QStringLiteral("ffmpeg/ffmpeg.exe")),
-        appDir.filePath(QStringLiteral("ffmpeg.exe")),
-        appDir.filePath(QStringLiteral("../app/ffmpeg/ffmpeg.exe")),
-        findWorkspaceDevPath(QStringLiteral("tools/MiaCode-latest/third_party/ffmpeg/windows/win64/ffmpeg.exe")),
-        findWorkspaceDevPath(QStringLiteral("tools/MiaCode-1.2.0/third_party/ffmpeg/windows/ffmpeg.exe")),
-    };
-    for (const QString& candidate : candidates) {
-        if (!candidate.isEmpty() && QFileInfo::exists(candidate)) {
-            return QDir::cleanPath(candidate);
-        }
-    }
-    return QStringLiteral("ffmpeg");
 }
 
 QVariantList NoaCopilotModel::creativityPresetOptions() const
@@ -311,8 +199,8 @@ QVariantList NoaCopilotModel::creativityPresetOptions() const
 QVariantList NoaCopilotModel::deviceModeOptions() const
 {
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("auto")}, {QStringLiteral("label"), QStringLiteral("自动 (优先 CUDA)")}},
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("cuda")}, {QStringLiteral("label"), QStringLiteral("CUDA (NVIDIA GPU)")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("auto")}, {QStringLiteral("label"), QStringLiteral("自动（所选 Python 环境）")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("cuda")}, {QStringLiteral("label"), QStringLiteral("CUDA（内置模式使用 WSL）")}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("cpu")}, {QStringLiteral("label"), QStringLiteral("CPU")}},
     };
 }
@@ -337,7 +225,7 @@ QVariantList NoaCopilotModel::envModeOptions() const
 QVariantList NoaCopilotModel::sourceModeOptions() const
 {
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (v11-compact-spec)")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Spine417 v4)")}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("custom")}, {QStringLiteral("label"), QStringLiteral("自定义 Worktree / 推理源码目录")}},
     };
 }
@@ -353,15 +241,17 @@ void NoaCopilotModel::loadPreferences()
     device_ = sec.value(QStringLiteral("device")).toString(QStringLiteral("auto"));
     precision_ = sec.value(QStringLiteral("precision")).toString(QStringLiteral("bf16"));
     temperature_ = sec.value(QStringLiteral("temperature")).toDouble(1.0);
-    topK_ = sec.value(QStringLiteral("top_k")).toInt(32);
-    topP_ = sec.value(QStringLiteral("top_p")).toDouble(0.95);
-    repetitionPenalty_ = sec.value(QStringLiteral("repetition_penalty")).toDouble(1.0);
-    maxSlideJudgeAreas_ = sec.value(QStringLiteral("max_slide_judge_areas")).toInt(4);
     seed_ = sec.value(QStringLiteral("seed")).toInt(-1);
     debounceMs_ = qBound(150, sec.value(QStringLiteral("debounce_ms")).toInt(420), 3000);
     checkpointPath_ = sec.value(QStringLiteral("checkpoint_path")).toString();
     checkpointDir_ = sec.value(QStringLiteral("checkpoint_dir")).toString();
     pythonMode_ = normalizeModeToken(sec.value(QStringLiteral("python_mode")).toString(QStringLiteral("bundled")));
+    QFile runtimeSettings(QDir(defaultBuiltinRoot()).filePath(QStringLiteral("wsl.json")));
+    QJsonObject defaults;
+    if (runtimeSettings.open(QIODevice::ReadOnly))
+        defaults = QJsonDocument::fromJson(runtimeSettings.readAll()).object();
+    wslPython_ = sec.value(QStringLiteral("wsl_python")).toString(defaults.value(QStringLiteral("python")).toString());
+    wslDistribution_ = sec.value(QStringLiteral("wsl_distribution")).toString(defaults.value(QStringLiteral("distribution")).toString());
     customPythonPath_ = sec.value(QStringLiteral("custom_python_path")).toString();
     sourceMode_ = normalizeModeToken(sec.value(QStringLiteral("source_mode")).toString(QStringLiteral("bundled")));
     customSourceRoot_ = sec.value(QStringLiteral("custom_source_root")).toString();
@@ -382,15 +272,13 @@ void NoaCopilotModel::savePreferences() const
     sec.insert(QStringLiteral("device"), device_);
     sec.insert(QStringLiteral("precision"), precision_);
     sec.insert(QStringLiteral("temperature"), temperature_);
-    sec.insert(QStringLiteral("top_k"), topK_);
-    sec.insert(QStringLiteral("top_p"), topP_);
-    sec.insert(QStringLiteral("repetition_penalty"), repetitionPenalty_);
-    sec.insert(QStringLiteral("max_slide_judge_areas"), maxSlideJudgeAreas_);
     sec.insert(QStringLiteral("seed"), seed_);
     sec.insert(QStringLiteral("debounce_ms"), debounceMs_);
     sec.insert(QStringLiteral("checkpoint_path"), checkpointPath_);
     sec.insert(QStringLiteral("checkpoint_dir"), checkpointDir_);
     sec.insert(QStringLiteral("python_mode"), pythonMode_);
+    sec.insert(QStringLiteral("wsl_python"), wslPython_);
+    sec.insert(QStringLiteral("wsl_distribution"), wslDistribution_);
     sec.insert(QStringLiteral("custom_python_path"), customPythonPath_);
     sec.insert(QStringLiteral("source_mode"), sourceMode_);
     sec.insert(QStringLiteral("custom_source_root"), customSourceRoot_);
@@ -402,19 +290,10 @@ void NoaCopilotModel::applyCreativityPresetValues(const QString& preset)
 {
     if (preset == QStringLiteral("stable")) {
         temperature_ = 0.85;
-        topK_ = 24;
-        topP_ = 0.90;
-        repetitionPenalty_ = 1.0;
     } else if (preset == QStringLiteral("creative")) {
         temperature_ = 1.12;
-        topK_ = 48;
-        topP_ = 0.98;
-        repetitionPenalty_ = 1.02;
     } else if (preset == QStringLiteral("balanced")) {
         temperature_ = 1.00;
-        topK_ = 32;
-        topP_ = 0.95;
-        repetitionPenalty_ = 1.0;
     }
 }
 
@@ -543,11 +422,13 @@ void NoaCopilotModel::setDevice(const QString& value)
     if (device_ == value) {
         return;
     }
+    const bool wasWsl = usesWsl();
     device_ = value;
     savePreferences();
     emit configChanged();
     if (enabled_) {
-        sendConfigureRequest();
+        if (usesWsl() != wasWsl) restartDaemon();
+        else sendConfigureRequest();
     }
 }
 
@@ -566,59 +447,12 @@ void NoaCopilotModel::setPrecision(const QString& value)
 
 void NoaCopilotModel::setTemperature(double value)
 {
-    value = qBound(0.1, value, 2.0);
+    value = qBound(0.0, value, 2.0);
     if (qFuzzyCompare(temperature_, value)) {
         return;
     }
     temperature_ = value;
     creativityPreset_ = QStringLiteral("custom");
-    savePreferences();
-    emit configChanged();
-}
-
-void NoaCopilotModel::setTopK(int value)
-{
-    value = qBound(0, value, 256);
-    if (topK_ == value) {
-        return;
-    }
-    topK_ = value;
-    creativityPreset_ = QStringLiteral("custom");
-    savePreferences();
-    emit configChanged();
-}
-
-void NoaCopilotModel::setTopP(double value)
-{
-    value = qBound(0.1, value, 1.0);
-    if (qFuzzyCompare(topP_, value)) {
-        return;
-    }
-    topP_ = value;
-    creativityPreset_ = QStringLiteral("custom");
-    savePreferences();
-    emit configChanged();
-}
-
-void NoaCopilotModel::setRepetitionPenalty(double value)
-{
-    value = qBound(0.8, value, 1.5);
-    if (qFuzzyCompare(repetitionPenalty_, value)) {
-        return;
-    }
-    repetitionPenalty_ = value;
-    creativityPreset_ = QStringLiteral("custom");
-    savePreferences();
-    emit configChanged();
-}
-
-void NoaCopilotModel::setMaxSlideJudgeAreas(int value)
-{
-    value = qBound(0, value, 32);
-    if (maxSlideJudgeAreas_ == value) {
-        return;
-    }
-    maxSlideJudgeAreas_ = value;
     savePreferences();
     emit configChanged();
 }
@@ -656,6 +490,29 @@ void NoaCopilotModel::setPythonMode(const QString& mode)
     if (enabled_) {
         restartDaemon();
     }
+}
+
+bool NoaCopilotModel::usesWsl() const
+{
+    return pythonMode_ == QStringLiteral("bundled") && device_ == QStringLiteral("cuda");
+}
+
+void NoaCopilotModel::setWslPython(const QString& path)
+{
+    if (wslPython_ == path.trimmed()) return;
+    wslPython_ = path.trimmed();
+    savePreferences();
+    emit configChanged();
+    if (enabled_ && usesWsl()) restartDaemon();
+}
+
+void NoaCopilotModel::setWslDistribution(const QString& name)
+{
+    if (wslDistribution_ == name.trimmed()) return;
+    wslDistribution_ = name.trimmed();
+    savePreferences();
+    emit configChanged();
+    if (enabled_ && usesWsl()) restartDaemon();
 }
 
 void NoaCopilotModel::setCustomPythonPath(const QString& path)
@@ -975,7 +832,7 @@ void NoaCopilotModel::ensureDaemonRunning()
 
     const QString pythonExe = resolvedPythonPath();
     const QString sourceRoot = resolvedSourceRoot();
-    if (!QFileInfo::exists(pythonExe)) {
+    if (!usesWsl() && !QFileInfo::exists(pythonExe)) {
         updateStatus(
             QStringLiteral("error"),
             QStringLiteral("未找到 Python 环境"),
@@ -1048,13 +905,26 @@ void NoaCopilotModel::ensureDaemonRunning()
         });
 
     updateStatus(QStringLiteral("starting"), QStringLiteral("正在启动..."));
-    daemonProcess_->start(
-        pythonExe,
-        {QStringLiteral("-u"), QStringLiteral("-m"), QStringLiteral("maidata.streaming.noa_copilot_daemon")});
+    const QStringList args{QStringLiteral("-u"), QStringLiteral("-m"), QStringLiteral("maidata.spine.copilot")};
+    connect(daemonProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            updateStatus(QStringLiteral("error"), QStringLiteral("无法启动推理环境"), daemonProcess_->errorString());
+    });
+    if (usesWsl()) {
+        QStringList launch;
+        if (!wslDistribution_.isEmpty()) launch << QStringLiteral("--distribution") << wslDistribution_;
+        launch << QStringLiteral("--cd") << QDir::toNativeSeparators(sourceRoot)
+               << QStringLiteral("--exec") << QStringLiteral("env") << QStringLiteral("PYTHONIOENCODING=utf-8")
+               << QStringLiteral("PYTHONNOUSERSITE=1") << wslPython_;
+        daemonProcess_->start(QStringLiteral("wsl.exe"), launch + args);
+    } else {
+        daemonProcess_->start(pythonExe, args);
+    }
 }
 
 void NoaCopilotModel::stopDaemon()
 {
+    stdoutBuffer_.clear();
     debounceTimer_.stop();
     idleVramTimer_.stop();
     activeRequestId_ = 0;
@@ -1102,11 +972,8 @@ void NoaCopilotModel::sendConfigureRequest()
     req.insert(QStringLiteral("checkpoint"), checkpointPath_);
     req.insert(QStringLiteral("device"), device_);
     req.insert(QStringLiteral("precision"), precision_);
-    req.insert(QStringLiteral("geometry"), resolvedGeometryDir());
-    req.insert(QStringLiteral("slide_data"), resolvedSlideDataPath());
-    req.insert(QStringLiteral("stats_dir"), resolvedStatsDir());
+    req.insert(QStringLiteral("models"), QDir(defaultBuiltinRoot()).filePath(QStringLiteral("models")));
     req.insert(QStringLiteral("cache_dir"), resolvedCacheDir());
-    req.insert(QStringLiteral("ffmpeg"), resolvedFfmpegPath());
     writeDaemonJson(req);
 }
 
@@ -1224,7 +1091,7 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("audio"), audioPath);
     req.insert(QStringLiteral("first"), currentChartFirstSeconds());
     req.insert(QStringLiteral("bpm"), currentChartBpm());
-    req.insert(QStringLiteral("difficulty"), qMax(2, document_.currentDifficultyId()));
+    req.insert(QStringLiteral("difficulty"), document_.currentDifficultyId());
     req.insert(QStringLiteral("level"), levelVal);
     req.insert(QStringLiteral("designer"), designerVal);
     req.insert(QStringLiteral("cursor_offset"), lastCursorPos_);
@@ -1233,10 +1100,6 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("span_beats"), qMax(1, spanBeats));
     req.insert(QStringLiteral("fill_to_next"), fillToNext);
     req.insert(QStringLiteral("temperature"), temperature_);
-    req.insert(QStringLiteral("top_k"), topK_);
-    req.insert(QStringLiteral("top_p"), topP_);
-    req.insert(QStringLiteral("repetition_penalty"), repetitionPenalty_);
-    req.insert(QStringLiteral("max_slide_judge_areas"), maxSlideJudgeAreas_);
     req.insert(QStringLiteral("seed"), seed_);
     writeDaemonJson(req);
 }
@@ -1381,6 +1244,13 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
         refreshAudioCacheSize();
 
+        if (activeRequestRevision_ != document_.documentRevision()) {
+            fullStreamingActive_ = false;
+            clearDualSurfaceGhostPreview();
+            emit streamingProgressChanged();
+            emit emptyCardChanged();
+            return;
+        }
         const QString text = message.value(QStringLiteral("text")).toString();
         const int replaceStart = message.value(QStringLiteral("replace_start")).toInt(lastCursorPos_);
         const int replaceEnd = message.value(QStringLiteral("replace_end")).toInt(lastCursorPos_);
@@ -1570,6 +1440,7 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
         dismissGhost();
     }
     if (textChanged) {
+        if (pendingRangeActive_) rejectPendingRange();
         sendSyncChartIfNeeded();
         if (enabled_ && autoContinue_ && hasCheckpoint() && !inlineCardVisible_ && !pendingRangeActive_) {
             debounceTimer_.start(debounceMs_);

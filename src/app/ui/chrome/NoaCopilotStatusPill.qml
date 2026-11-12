@@ -367,7 +367,7 @@ Item {
                     LabeledSlider {
                         label: "采样温度"
                         labelWidth: 68
-                        from: 0.1
+                        from: 0.0
                         to: 2.0
                         stepSize: 0.05
                         decimals: 2
@@ -376,29 +376,7 @@ Item {
                         onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                     }
 
-                    LabeledSlider {
-                        label: "Top-P"
-                        labelWidth: 68
-                        from: 0.1
-                        to: 1.0
-                        stepSize: 0.02
-                        decimals: 2
-                        suffix: ""
-                        value: root.noaCopilot ? root.noaCopilot.topP : 0.94
-                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.topP = v }
-                    }
 
-                    LabeledSlider {
-                        label: "重复惩罚"
-                        labelWidth: 68
-                        from: 1.0
-                        to: 1.5
-                        stepSize: 0.02
-                        decimals: 2
-                        suffix: ""
-                        value: root.noaCopilot ? root.noaCopilot.repetitionPenalty : 1.08
-                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.repetitionPenalty = v }
-                    }
                 }
             }
         }

@@ -61,16 +61,14 @@ class NoaCopilotModel final : public QObject
 
     // ---- Advanced Sampling & Runtime Controls ----
     Q_PROPERTY(double temperature READ temperature WRITE setTemperature NOTIFY configChanged)
-    Q_PROPERTY(int topK READ topK WRITE setTopK NOTIFY configChanged)
-    Q_PROPERTY(double topP READ topP WRITE setTopP NOTIFY configChanged)
-    Q_PROPERTY(double repetitionPenalty READ repetitionPenalty WRITE setRepetitionPenalty NOTIFY configChanged)
-    Q_PROPERTY(int maxSlideJudgeAreas READ maxSlideJudgeAreas WRITE setMaxSlideJudgeAreas NOTIFY configChanged)
     Q_PROPERTY(int seed READ seed WRITE setSeed NOTIFY configChanged)
     Q_PROPERTY(int debounceMs READ debounceMs WRITE setDebounceMs NOTIFY configChanged)
 
     Q_PROPERTY(QString pythonMode READ pythonMode WRITE setPythonMode NOTIFY configChanged)
     Q_PROPERTY(QString envMode READ pythonMode WRITE setPythonMode NOTIFY configChanged)
     Q_PROPERTY(QVariantList envModeOptions READ envModeOptions CONSTANT)
+    Q_PROPERTY(QString wslPython READ wslPython WRITE setWslPython NOTIFY configChanged)
+    Q_PROPERTY(QString wslDistribution READ wslDistribution WRITE setWslDistribution NOTIFY configChanged)
     Q_PROPERTY(QString customPythonPath READ customPythonPath WRITE setCustomPythonPath NOTIFY configChanged)
     Q_PROPERTY(QString resolvedPythonPath READ resolvedPythonPath NOTIFY configChanged)
     Q_PROPERTY(QString sourceMode READ sourceMode WRITE setSourceMode NOTIFY configChanged)
@@ -165,17 +163,9 @@ public:
     double temperature() const { return temperature_; }
     void setTemperature(double value);
 
-    int topK() const { return topK_; }
-    void setTopK(int value);
 
-    double topP() const { return topP_; }
-    void setTopP(double value);
 
-    double repetitionPenalty() const { return repetitionPenalty_; }
-    void setRepetitionPenalty(double value);
 
-    int maxSlideJudgeAreas() const { return maxSlideJudgeAreas_; }
-    void setMaxSlideJudgeAreas(int value);
 
     int seed() const { return seed_; }
     void setSeed(int value);
@@ -186,6 +176,10 @@ public:
     QString pythonMode() const { return pythonMode_; }
     void setPythonMode(const QString& mode);
     QVariantList envModeOptions() const;
+    QString wslPython() const { return wslPython_; }
+    QString wslDistribution() const { return wslDistribution_; }
+    void setWslPython(const QString& path);
+    void setWslDistribution(const QString& name);
     QString customPythonPath() const { return customPythonPath_; }
     void setCustomPythonPath(const QString& path);
     QString resolvedPythonPath() const;
@@ -311,12 +305,7 @@ private:
 
     QString defaultBuiltinRoot() const;
     QString defaultCheckpointsDir() const;
-    QString resolvedResourcesDir() const;
-    QString resolvedSlideDataPath() const;
-    QString resolvedGeometryDir() const;
-    QString resolvedStatsDir() const;
     QString resolvedCacheDir() const;
-    QString resolvedFfmpegPath() const;
 
     void ensureDaemonRunning();
     void stopDaemon();
@@ -361,15 +350,14 @@ private:
     QString device_ = QStringLiteral("auto");
     QString precision_ = QStringLiteral("bf16");
     double temperature_ = 1.0;
-    int topK_ = 32;
-    double topP_ = 0.95;
-    double repetitionPenalty_ = 1.0;
-    int maxSlideJudgeAreas_ = 4;
     int seed_ = -1;
     int debounceMs_ = 420;
     QString checkpointPath_;
     QString checkpointDir_;
     QString pythonMode_ = QStringLiteral("bundled");
+    QString wslPython_;
+    QString wslDistribution_;
+    bool usesWsl() const;
     QString customPythonPath_;
     QString sourceMode_ = QStringLiteral("bundled");
     QString customSourceRoot_;

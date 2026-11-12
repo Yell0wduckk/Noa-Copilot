@@ -191,3 +191,8 @@ __pycache__/
 
 # clangd project index cache.
 /.cache/clangd/
+
+# Local frozen frontends and standalone Python installation used by the packager.
+/third_party/spine417-models/
+/third_party/spine417-features/
+/third_party/noa-copilot-env/
