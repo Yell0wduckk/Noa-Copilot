@@ -16,8 +16,10 @@ Rectangle {
     property bool difficultyActive: false
     property bool updateAvailable: false
     property string updateVersion: ""
+    property var noaCopilot: null
 
     signal updateActivated()
+    signal noaCopilotPreferencesRequested()
 
     implicitHeight: 23
     color: Theme.surfaceColor(Theme.colors.background.statusBar)
@@ -78,6 +80,12 @@ Rectangle {
             text: "simai"
             visible: root.difficultyActive
             Layout.preferredWidth: implicitWidth
+        }
+        NoaCopilotStatusPill {
+            noaCopilot: root.noaCopilot
+            difficultyActive: root.difficultyActive
+            visible: root.noaCopilot !== null
+            onOpenPreferencesRequested: root.noaCopilotPreferencesRequested()
         }
     }
 

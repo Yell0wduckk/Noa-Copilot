@@ -216,6 +216,7 @@ private:
     std::unique_ptr<TimelineQuickHeaderLayer> headerLayer_;
     std::unique_ptr<TimelineQuickGridLinesLayer> gridLinesLayer_;
     std::unique_ptr<TimelineQuickNotesLayer> notesLayer_;
+    std::unique_ptr<TimelineQuickNotesLayer> ghostNotesLayer_;
     std::unique_ptr<TimelineQuickOverlayLayer> overlayLayer_;
 
 };

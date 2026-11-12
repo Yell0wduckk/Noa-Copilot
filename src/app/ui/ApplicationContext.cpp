@@ -32,6 +32,7 @@ ApplicationContext::ApplicationContext(miacode::ApplicationServices& services,
     , pet_(this)
     , net_(services.netService(), this)
     , netUpload_(services.netService(), services.uiRequests(), this)
+    , noaCopilot_(document_, preview_, timeline_, services.uiRequests(), this)
     , lifecycle_(services.editorPageRouterSlot(), this)
 {
     net_.setHost(&document_, &services.uiRequests());

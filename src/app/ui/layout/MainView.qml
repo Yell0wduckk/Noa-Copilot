@@ -27,6 +27,7 @@ Item {
     readonly property var latency: applicationContext.latency
     readonly property var shortcutModel: applicationContext.shortcuts
     readonly property var updates: applicationContext.update
+    readonly property var noaCopilot: applicationContext.noaCopilot
     readonly property string documentTitle: {
         if (!documentSession.hasDocument)
             return ""
@@ -432,6 +433,7 @@ Item {
                 latency: root.latency
                 net: root.applicationContext.net
                 netUpload: root.applicationContext.netUpload
+                noaCopilot: root.noaCopilot
                 compact: root.compact
                 documentTitle: root.documentTitle
                 onOpenRequested: root.showOpenFileDialog()
@@ -471,6 +473,8 @@ Item {
             updateAvailable: root.updates ? root.updates.updateAvailable : false
             updateVersion: root.updates ? root.updates.availableVersion : ""
             onUpdateActivated: updatePrompt.present()
+            noaCopilot: root.noaCopilot
+            onNoaCopilotPreferencesRequested: preferencesDialog.openPage("noa_copilot")
         }
     }
 
@@ -862,6 +866,7 @@ Item {
         preferences: root.preferences
         appBackground: root.appBackground
         updateService: root.updates
+        noaCopilot: root.noaCopilot
         onUpdateRequested: updatePrompt.present()
     }
 

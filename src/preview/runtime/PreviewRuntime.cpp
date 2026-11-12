@@ -633,6 +633,16 @@ void PreviewRuntime::setNoteMarkers(const QVector<TimelineNoteMarker>& notes)
     update();
 }
 
+void PreviewRuntime::setGhostNoteMarkers(const QVector<TimelineNoteMarker>& notes)
+{
+    if (frameState_.ghostNoteMarkers.isEmpty() && notes.isEmpty()) {
+        return;
+    }
+    frameState_.ghostNoteMarkers = notes;
+    frameState_.ghostSceneContentRevision += 1;
+    update();
+}
+
 void PreviewRuntime::setProgressStatsCache(
     std::shared_ptr<const miacode::preview::scene::PreviewProgressStatsCache> cache
 )
@@ -1060,10 +1070,13 @@ void PreviewRuntime::reset(bool releaseStorage)
     const auto presentationMode = frameState_.media.presentationMode;
     if (releaseStorage) {
         frameState_.noteMarkers = QVector<TimelineNoteMarker>();
+        frameState_.ghostNoteMarkers = QVector<TimelineNoteMarker>();
         ++frameState_.sceneStorageGeneration;
     } else {
         frameState_.noteMarkers.clear();
+        frameState_.ghostNoteMarkers.clear();
     }
+    frameState_.ghostSceneContentRevision += 1;
     frameState_.progressStatsCache.reset();
     frameState_.muriAnalysisReport = MuriAnalysisReport();
     frameState_.playheadSeconds = 0.0;

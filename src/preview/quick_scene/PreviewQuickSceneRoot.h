@@ -161,6 +161,19 @@ private:
     miacode::preview::scene::PreviewLayerWindowCursor touchHoldCursor_;
     miacode::preview::scene::PreviewLayerWindowCursor chartReviewCursor_;
     miacode::preview::scene::PreviewLayerWindowCursor maimuriDxJudgeCursor_;
+    PreviewQuickGuideLayer ghostGuideLayer_;
+    PreviewQuickTrackLayer ghostTrackLayer_;
+    PreviewQuickSlideMotionLayer ghostSlideMotionLayer_;
+    PreviewQuickHeadLayer ghostHeadLayer_;
+    PreviewQuickTouchLayer ghostTouchLayer_;
+    PreviewQuickTouchHoldLayer ghostTouchHoldLayer_;
+    miacode::preview::scene::PreviewPreparedSceneCache ghostPreparedCache_;
+    miacode::preview::scene::PreviewLayerWindowCursor ghostGuideCursor_;
+    miacode::preview::scene::PreviewLayerWindowCursor ghostTrackCursor_;
+    miacode::preview::scene::PreviewLayerWindowCursor ghostSlideMotionCursor_;
+    miacode::preview::scene::PreviewLayerWindowCursor ghostHeadCursor_;
+    miacode::preview::scene::PreviewLayerWindowCursor ghostTouchCursor_;
+    miacode::preview::scene::PreviewLayerWindowCursor ghostTouchHoldCursor_;
     // logNoteLayersEmptyAnomaly() rate limit. Render-thread only.
     QElapsedTimer noteLayersEmptyAnomalyLogTimer_;
     quint64 noteLayersEmptyAnomalyFrames_ = 0;

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import MiaCode.UI
 
 AppDialog {
@@ -12,6 +13,8 @@ AppDialog {
     required property var preferences
     required property var appBackground
     property var updateService: null
+    property var noaCopilot: null
+    property bool noaCopilotAdvancedExpanded: false
 
     signal updateRequested()
     signal completionSettingsClosed()
@@ -113,11 +116,12 @@ AppDialog {
     readonly property int settingsRowHeight: Theme.controlMinHeight + 10
     readonly property int settingsLabelWidth: root.width < 650 ? 120 : 140
     readonly property int sectionSpacing: 2 * Theme.settingsRowSpacing
-    readonly property var pageIds: ["interface", "editor", "background", "performance", "shortcuts", "about"]
+    readonly property var pageIds: ["interface", "editor", "background", "performance", "shortcuts", "noa_copilot", "about"]
     readonly property var pageTitles: [
         qsTrId("qml.interface"), qsTrId("dialog.preferences.editor_group"),
         qsTrId("dialog.preferences.background_group"), qsTrId("dialog.preferences.performance_group"),
         qsTrId("dialog.preferences.shortcuts_group"),
+        "NoaCopilot",
         qsTrId("action.about")
     ]
 
@@ -983,6 +987,335 @@ AppDialog {
                         onClicked: {
                             root.shortcuts.resetAllShortcuts()
                             root.refreshShortcuts()
+                        }
+                    }
+                }
+
+                PreferencePage {
+                    objectName: "preferencesNoaCopilotPage"
+
+                    FileDialog {
+                        id: noaCheckpointDialog
+                        title: "选择 NoaCopilot 模型权重 (.pt / .ckpt)"
+                        fileMode: FileDialog.OpenFile
+                        nameFilters: ["Model Checkpoints (*.pt *.ckpt *.safetensors *.bin)", "All Files (*)"]
+                        onAccepted: if (root.noaCopilot) root.noaCopilot.chooseCheckpointFileUrl(selectedFile)
+                    }
+
+                    FileDialog {
+                        id: noaPythonDialog
+                        title: "选择自定义 Python 解释器 (python.exe)"
+                        fileMode: FileDialog.OpenFile
+                        nameFilters: ["Python Executable (python.exe python)", "All Files (*)"]
+                        onAccepted: if (root.noaCopilot) root.noaCopilot.chooseCustomPythonUrl(selectedFile)
+                    }
+
+                    FolderDialog {
+                        id: noaSourceDirDialog
+                        title: "选择自定义推理源码目录 (Worktree Root 或 src)"
+                        onAccepted: if (root.noaCopilot) root.noaCopilot.chooseCustomSourceDirUrl(selectedFolder)
+                    }
+
+                    PreferenceGroup {
+                        title: "智能续写与起稿"
+                        first: true
+
+                        PreferenceSwitch {
+                            text: "启用 NoaCopilot 智能制谱助手"
+                            checked: root.noaCopilot ? root.noaCopilot.enabled : false
+                            onToggled: if (root.noaCopilot) root.noaCopilot.enabled = checked
+                        }
+
+                        PreferenceSwitch {
+                            text: "光标停顿自动触发 Ghost Note 续写"
+                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                            checked: root.noaCopilot ? root.noaCopilot.autoContinueEnabled : false
+                            onToggled: if (root.noaCopilot) root.noaCopilot.autoContinueEnabled = checked
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumHeight: root.settingsRowHeight
+                            spacing: 8
+
+                            Text {
+                                Layout.preferredWidth: root.settingsLabelWidth
+                                text: "模型权重"
+                                color: Theme.colors.text.secondary
+                                font.family: Theme.uiFont
+                                font.pixelSize: Theme.uiFontSize
+                            }
+
+                            AppComboBox {
+                                Layout.fillWidth: true
+                                textRole: "label"
+                                enabled: root.noaCopilot && root.noaCopilot.availableCheckpoints.length > 0
+                                model: root.noaCopilot && root.noaCopilot.availableCheckpoints.length > 0
+                                    ? root.noaCopilot.availableCheckpoints
+                                    : [{ label: "未检测到模型权重 (请点击右侧浏览选择)", value: "" }]
+                                currentIndex: {
+                                    if (!root.noaCopilot) return 0
+                                    const items = root.noaCopilot.availableCheckpoints
+                                    const cur = root.noaCopilot.checkpointPath
+                                    for (let i = 0; i < items.length; ++i) {
+                                        if (items[i].value === cur) return i
+                                    }
+                                    return 0
+                                }
+                                onActivated: index => {
+                                    if (root.noaCopilot && index >= 0 && index < root.noaCopilot.availableCheckpoints.length)
+                                        root.noaCopilot.checkpointPath = root.noaCopilot.availableCheckpoints[index].value
+                                }
+                            }
+
+                            AppButton {
+                                text: "浏览..."
+                                onClicked: noaCheckpointDialog.open()
+                            }
+
+                            AppButton {
+                                text: "打开目录"
+                                onClicked: if (root.noaCopilot) root.noaCopilot.openCheckpointDirectory()
+                            }
+                        }
+
+                        PreferenceCombo {
+                            label: "创意挡位"
+                            options: root.noaCopilot ? root.noaCopilot.creativityPresetOptions : []
+                            currentValue: root.noaCopilot ? root.noaCopilot.creativityPreset : "balanced"
+                            onPicked: value => { if (root.noaCopilot) root.noaCopilot.creativityPreset = value }
+                        }
+
+                        PreferenceCombo {
+                            label: "默认谱师风格"
+                            options: root.noaCopilot ? root.noaCopilot.designerOptions : []
+                            currentValue: root.noaCopilot ? root.noaCopilot.defaultDesigner : ""
+                            onPicked: value => { if (root.noaCopilot) root.noaCopilot.defaultDesigner = value }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        ChromeRow {
+                            Layout.fillWidth: true
+                            implicitHeight: root.settingsRowHeight
+                            text: root.noaCopilotAdvancedExpanded ? "高级设置 (运行环境、采样超参与缓存管理) ▴" : "高级设置 (运行环境、采样超参与缓存管理) ▾"
+                            labelFont: Qt.font({
+                                family: Theme.uiFont,
+                                pixelSize: Theme.uiFontSize,
+                                weight: Font.DemiBold
+                            })
+                            onClicked: root.noaCopilotAdvancedExpanded = !root.noaCopilotAdvancedExpanded
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            visible: root.noaCopilotAdvancedExpanded
+                            spacing: root.sectionSpacing
+
+                            PreferenceGroup {
+                                title: "运行环境与推理源码"
+
+                                PreferenceCombo {
+                                    label: "计算设备"
+                                    options: root.noaCopilot ? root.noaCopilot.deviceModeOptions : []
+                                    currentValue: root.noaCopilot ? root.noaCopilot.deviceMode : "auto"
+                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.deviceMode = value }
+                                }
+
+                                PreferenceCombo {
+                                    label: "推理精度"
+                                    options: root.noaCopilot ? root.noaCopilot.precisionModeOptions : []
+                                    currentValue: root.noaCopilot ? root.noaCopilot.precisionMode : "bf16"
+                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.precisionMode = value }
+                                }
+
+                                PreferenceCombo {
+                                    label: "Python 环境"
+                                    options: root.noaCopilot ? root.noaCopilot.envModeOptions : []
+                                    currentValue: root.noaCopilot ? root.noaCopilot.envMode : "bundled"
+                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.envMode = value }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: root.noaCopilot ? root.noaCopilot.envMode === "custom" : false
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.preferredWidth: root.settingsLabelWidth
+                                        text: "解释器路径"
+                                        color: Theme.colors.text.secondary
+                                        font.family: Theme.uiFont
+                                        font.pixelSize: Theme.uiFontSize
+                                    }
+
+                                    AppTextField {
+                                        Layout.fillWidth: true
+                                        placeholderText: "选择包含 torch 与 librosa 的 python.exe"
+                                        text: root.noaCopilot ? root.noaCopilot.customPythonPath : ""
+                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.customPythonPath = text
+                                    }
+
+                                    AppButton {
+                                        text: "浏览..."
+                                        onClicked: noaPythonDialog.open()
+                                    }
+                                }
+
+                                PreferenceCombo {
+                                    label: "推理源码"
+                                    options: root.noaCopilot ? root.noaCopilot.sourceModeOptions : []
+                                    currentValue: root.noaCopilot ? root.noaCopilot.sourceMode : "bundled"
+                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.sourceMode = value }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: root.noaCopilot ? root.noaCopilot.sourceMode === "custom" : false
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.preferredWidth: root.settingsLabelWidth
+                                        text: "Worktree 路径"
+                                        color: Theme.colors.text.secondary
+                                        font.family: Theme.uiFont
+                                        font.pixelSize: Theme.uiFontSize
+                                    }
+
+                                    AppTextField {
+                                        Layout.fillWidth: true
+                                        placeholderText: "选择包含 src/maidata 的 worktree 根目录"
+                                        text: root.noaCopilot ? root.noaCopilot.customSourceDir : ""
+                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.customSourceDir = text
+                                    }
+
+                                    AppButton {
+                                        text: "浏览..."
+                                        onClicked: noaSourceDirDialog.open()
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.noaCopilot
+                                        ? ("当前生效 Python: " + root.noaCopilot.resolvedPythonPath
+                                           + "\n当前生效推理源码: " + root.noaCopilot.resolvedSourceDir)
+                                        : ""
+                                    color: Theme.colors.text.secondary
+                                    font.family: Theme.uiFont
+                                    font.pixelSize: Theme.captionFontSize
+                                    wrapMode: Text.WrapAnywhere
+                                }
+                            }
+
+                            PreferenceGroup {
+                                title: "采样超参数与触发灵敏度"
+
+                                PreferenceSlider {
+                                    label: "停顿触发延迟"
+                                    from: 200
+                                    to: 1500
+                                    stepSize: 50
+                                    decimals: 0
+                                    suffix: " ms"
+                                    value: root.noaCopilot ? root.noaCopilot.debounceMs : 420
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.debounceMs = Math.round(v) }
+                                }
+
+                                PreferenceSlider {
+                                    label: "采样温度"
+                                    from: 0.1
+                                    to: 2.0
+                                    stepSize: 0.05
+                                    decimals: 2
+                                    suffix: ""
+                                    value: root.noaCopilot ? root.noaCopilot.temperature : 0.90
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
+                                }
+
+                                PreferenceSlider {
+                                    label: "Top-K"
+                                    from: 0
+                                    to: 128
+                                    stepSize: 4
+                                    decimals: 0
+                                    suffix: ""
+                                    value: root.noaCopilot ? root.noaCopilot.topK : 32
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.topK = Math.round(v) }
+                                }
+
+                                PreferenceSlider {
+                                    label: "Top-P"
+                                    from: 0.1
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    decimals: 2
+                                    suffix: ""
+                                    value: root.noaCopilot ? root.noaCopilot.topP : 0.94
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.topP = v }
+                                }
+
+                                PreferenceSlider {
+                                    label: "重复惩罚"
+                                    from: 1.0
+                                    to: 1.5
+                                    stepSize: 0.02
+                                    decimals: 2
+                                    suffix: ""
+                                    value: root.noaCopilot ? root.noaCopilot.repetitionPenalty : 1.08
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.repetitionPenalty = v }
+                                }
+
+                                PreferenceSlider {
+                                    label: "最大并发 Slide 判定区"
+                                    from: 1
+                                    to: 8
+                                    stepSize: 1
+                                    decimals: 0
+                                    suffix: ""
+                                    value: root.noaCopilot ? root.noaCopilot.maxSlideJudgeAreas : 4
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.maxSlideJudgeAreas = Math.round(v) }
+                                }
+                            }
+
+                            PreferenceGroup {
+                                title: "守护进程与缓存管理"
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: root.noaCopilot
+                                            ? ("守护状态: " + root.noaCopilot.statusMessage
+                                               + "  |  音频特征磁盘缓存: " + root.noaCopilot.audioCacheSizeText)
+                                            : ""
+                                        color: Theme.colors.text.secondary
+                                        font.family: Theme.uiFont
+                                        font.pixelSize: Theme.secondaryFontSize
+                                        wrapMode: Text.WordWrap
+                                    }
+
+                                    AppButton {
+                                        text: "清理特征缓存"
+                                        onClicked: if (root.noaCopilot) root.noaCopilot.clearAudioCache()
+                                    }
+
+                                    AppButton {
+                                        text: "释放显存"
+                                        onClicked: if (root.noaCopilot) root.noaCopilot.unloadModelMemory()
+                                    }
+
+                                    AppButton {
+                                        text: "重启守护进程"
+                                        onClicked: if (root.noaCopilot) root.noaCopilot.restartDaemon()
+                                    }
+                                }
+                            }
                         }
                     }
                 }

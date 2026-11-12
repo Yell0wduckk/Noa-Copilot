@@ -18,6 +18,7 @@ Item {
     required property var pages
     required property var net
     required property var netUpload
+    property var noaCopilot: null
 
     readonly property Item sourceEditorItem: sourceEditor
     readonly property Item difficultyFieldsItem: difficultyHeader
@@ -394,6 +395,7 @@ Item {
         syncController: root.editorSync
         analysisSession: root.analysisSession
         preferences: root.preferences
+        noaCopilot: root.noaCopilot
         onNormalizeChartRequested: root.pages.openNormalizeWholeChart()
         onCompletionSettingsRequested: function(group) { root.completionSettingsRequested(group) }
     }

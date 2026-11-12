@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet("Release", "Debug")]
     [string]$Config = "Release",
     [ValidateSet("x64", "arm64")]
@@ -641,6 +641,12 @@ if (Test-Path $ffmpegSrc) {
     Copy-Item $ffmpegSrc (Join-Path $ffmpegDstDir "ffmpeg.exe") -Force
 } else {
     throw "Missing required ffmpeg binary: $ffmpegSrc"
+}
+
+# Stage NoaCopilot runtime (inference source, v2 resources, checkpoints folder, and optional portable Python+PyTorch env)
+$stageNoaScript = Join-Path $PSScriptRoot "stage-noa-copilot.ps1"
+if (Test-Path $stageNoaScript) {
+    & $stageNoaScript -DistDir $DistDir
 }
 
 # Required package contents come from the toolchain data file.

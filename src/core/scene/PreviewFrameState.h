@@ -243,6 +243,8 @@ struct PreviewRenderState {
 struct PreviewFrameState {
     PreviewHudFontSettings hudFontSettings;
     QVector<TimelineNoteMarker> noteMarkers;
+    QVector<TimelineNoteMarker> ghostNoteMarkers;
+    quint64 ghostSceneContentRevision = 0;
     std::shared_ptr<const PreviewProgressStatsCache> progressStatsCache;
     MuriAnalysisReport muriAnalysisReport;
     MuriRenderOptions muriRenderOptions;

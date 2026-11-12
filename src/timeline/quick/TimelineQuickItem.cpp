@@ -9,6 +9,7 @@
 #include <QSGGeometry>
 #include <QSGGeometryNode>
 #include <QSGNode>
+#include <QSGOpacityNode>
 #include <QSGRendererInterface>
 #include <QStringList>
 #include <QMetaObject>
@@ -52,7 +53,7 @@ namespace {
 
 constexpr double kTimelineKeyHoldAccelerationPerSecond = 1.0;
 constexpr int kTimelineKeyHoldTickIntervalMs = 16;
-constexpr int kTimelineLayerSlotCount = 6;  // grid + header + gridLines + wave(translucent,on-top) + notes + overlay
+constexpr int kTimelineLayerSlotCount = 7;  // grid + header + gridLines + wave(translucent,on-top) + notes + ghostNotes + overlay
 
 // Phase 7 scroll-bucket index. Sole definition on purpose: the bucket is computed in two
 // places (the revision offset in applyDynamicSceneState, the rebuild cache key in
@@ -825,6 +826,7 @@ TimelineQuickItem::TimelineQuickItem(QQuickItem* parent)
     , headerLayer_(std::make_unique<TimelineQuickHeaderLayer>())
     , gridLinesLayer_(std::make_unique<TimelineQuickGridLinesLayer>())
     , notesLayer_(std::make_unique<TimelineQuickNotesLayer>())
+    , ghostNotesLayer_(std::make_unique<TimelineQuickNotesLayer>())
     , overlayLayer_(std::make_unique<TimelineQuickOverlayLayer>())
 {
     setFlag(ItemHasContents, true);
@@ -1518,6 +1520,62 @@ QSGNode* TimelineQuickItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeDat
     });
     updateLayerSlot(layerSlotAt(root, slotIndex++), [&](QSGNode* oldChild) {
         return notesLayer_->updateNode(oldChild, state, window(), textures_.get());
+    });
+    updateLayerSlot(layerSlotAt(root, slotIndex++), [&](QSGNode* oldChild) -> QSGNode* {
+        if (stateBridge_ == nullptr || stateBridge_->ghostSnapshot().lines.isEmpty()) {
+            return nullptr;
+        }
+        miacode::timeline::TimelineSceneBuildRequest ghostReq;
+        ghostReq.snapshot = stateBridge_->ghostSnapshot();
+        ghostReq.snapshot.minimumSecond = stateBridge_->renderSnapshot().minimumSecond;
+        ghostReq.snapshot.maximumSecond =
+            qMax(ghostReq.snapshot.maximumSecond, stateBridge_->renderSnapshot().maximumSecond);
+        ghostReq.snapshot.durationSeconds =
+            qMax(ghostReq.snapshot.durationSeconds, stateBridge_->renderSnapshot().durationSeconds);
+        ghostReq.waveformData = stateBridge_->waveformData();
+        ghostReq.viewportSize = state.viewportSize;
+        ghostReq.headerLineNumberFont = stateBridge_->headerLineNumberFont();
+        ghostReq.skinDirectory = stateBridge_->skinDirectory();
+        ghostReq.horizontalScrollValue = state.horizontalScrollValue;
+        ghostReq.horizontalCullPaddingPx = state.viewportSize.width();
+        ghostReq.zoomScale = stateBridge_->zoomScale();
+        ghostReq.contentScale = stateBridge_->contentScale();
+        ghostReq.fitViewportHeight = true;
+        ghostReq.playheadUpperLimitSeconds = stateBridge_->playheadUpperLimitSeconds();
+        ghostReq.showSlideTracks = stateBridge_->showSlideTracks();
+        ghostReq.appearanceRevision = state.appearanceRevision;
+        ghostReq.layoutRevision = state.layoutRevision;
+        const quint64 bucket = state.viewportSize.width() > 0
+            ? static_cast<quint64>(qMax(0, scrollBucketIndex(state.horizontalScrollValue, state.viewportSize.width())))
+            : 0ULL;
+        ghostReq.notesRevision = stateBridge_->ghostNotesRevision() + bucket;
+        miacode::timeline::TimelineSceneState ghostState =
+            miacode::timeline::TimelineSceneStateBuilder::build(ghostReq);
+        ghostState.horizontalScrollValue = state.horizontalScrollValue;
+
+        auto* opacityNode = dynamic_cast<QSGOpacityNode*>(oldChild);
+        if (opacityNode == nullptr) {
+            delete oldChild;
+            opacityNode = new QSGOpacityNode();
+            opacityNode->setOpacity(0.45);
+        } else {
+            opacityNode->setOpacity(0.45);
+        }
+        QSGNode* innerOld = opacityNode->firstChild();
+        QSGNode* innerNew = ghostNotesLayer_->updateNode(innerOld, ghostState, window(), textures_.get());
+        QSGNode* child = opacityNode->firstChild();
+        while (child != nullptr) {
+            QSGNode* next = child->nextSibling();
+            if (child != innerNew) {
+                opacityNode->removeChildNode(child);
+                delete child;
+            }
+            child = next;
+        }
+        if (innerNew != nullptr && innerNew->parent() != opacityNode) {
+            opacityNode->appendChildNode(innerNew);
+        }
+        return opacityNode;
     });
     updateLayerSlot(layerSlotAt(root, slotIndex++), [&](QSGNode* oldChild) {
         return overlayLayer_->updateNode(oldChild, state, window(), textures_.get());

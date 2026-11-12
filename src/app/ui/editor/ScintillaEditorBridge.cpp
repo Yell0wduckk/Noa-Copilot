@@ -280,6 +280,12 @@ void ScintillaEditorBridge::setAnalysisSession(AnalysisModel* value)
     refreshDiagnostics();
     emit bindingsChanged();
 }
+void ScintillaEditorBridge::setNoaCopilot(QObject* value)
+{
+    if (noaCopilot_ == value) return;
+    noaCopilot_ = value;
+    emit bindingsChanged();
+}
 void ScintillaEditorBridge::setNavigationVisible(bool value)
 {
     if (navigationVisible_ == value) return;
@@ -878,6 +884,22 @@ bool ScintillaEditorBridge::deleteBookmarkAtLine(int line)
     const int end = document_.utf16Position(send(SCI_GETLINEENDPOSITION, line - 1));
     return applyEditorTransaction(controller_->deleteBookmark(document_.text().mid(start, end - start), start));
 }
+bool ScintillaEditorBridge::replaceTextRange(int startPos, int endPos, const QString& replacementText, int newCursorPos)
+{
+    const int textLen = int(document_.text().size());
+    const int boundedStart = qBound(0, qMin(startPos, endPos), textLen);
+    const int boundedEnd = qBound(boundedStart, qMax(startPos, endPos), textLen);
+    const int targetCursor = newCursorPos >= 0 ? newCursorPos : (boundedStart + int(replacementText.size()));
+    miacode::editor::SimaiTextEditResult result;
+    result.consumed = true;
+    result.transaction.hasEdit = true;
+    result.transaction.replacementStart = boundedStart;
+    result.transaction.replacementEnd = boundedEnd;
+    result.transaction.replacementText = replacementText;
+    result.transaction.anchor = targetCursor;
+    result.transaction.position = targetCursor;
+    return applyEditorTransaction(result);
+}
 void ScintillaEditorBridge::beginUserInteraction()
 {
     viewportToRestore_.reset();
@@ -908,6 +930,30 @@ void ScintillaEditorBridge::keyPressEvent(QKeyEvent* event)
     if (event->matches(QKeySequence::Copy)) { copy(); event->accept(); return; }
     if (event->matches(QKeySequence::Paste)) { paste(); event->accept(); return; }
     if (event->matches(QKeySequence::SelectAll)) { selectAll(); event->accept(); return; }
+    if (event->key() == Qt::Key_K && event->modifiers() == Qt::ControlModifier) {
+        emit inlineCopilotRequested();
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Backslash && event->modifiers() == Qt::AltModifier) {
+        emit manualGhostRequested();
+        event->accept();
+        return;
+    }
+    if (noaCopilot_ && (!controller_ || !controller_->completionActive())) {
+        bool handled = false;
+        QMetaObject::invokeMethod(
+            noaCopilot_.data(),
+            "handleEditorKeyPress",
+            Qt::DirectConnection,
+            Q_RETURN_ARG(bool, handled),
+            Q_ARG(int, event->key()),
+            Q_ARG(int, int(event->modifiers())));
+        if (handled) {
+            event->accept();
+            return;
+        }
+    }
     if (event->key() == Qt::Key_PageUp || event->key() == Qt::Key_PageDown) beginUserInteraction();
     if (controller_) {
         const QString input = event->text();

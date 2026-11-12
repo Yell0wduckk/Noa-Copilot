@@ -171,6 +171,8 @@ void TimelineQuickStateBridge::bumpOverlayDynamicRevision()
 void TimelineQuickStateBridge::clear()
 {
     snapshot_ = TimelineRenderSnapshot();
+    ghostSnapshot_ = TimelineRenderSnapshot();
+    ++ghostNotesRevision_;
     waveformData_.reset();
     muriMarkersByLocation_.clear();
     muriMarkerTooltips_.clear();
@@ -211,6 +213,21 @@ void TimelineQuickStateBridge::replaceTimelineData(
 const TimelineRenderSnapshot& TimelineQuickStateBridge::renderSnapshot() const
 {
     return snapshot_;
+}
+
+void TimelineQuickStateBridge::setGhostSnapshot(const TimelineRenderSnapshot& snapshot)
+{
+    if (ghostSnapshot_.lines.isEmpty() && snapshot.lines.isEmpty()) {
+        return;
+    }
+    ghostSnapshot_ = snapshot;
+    ++ghostNotesRevision_;
+    emit renderStateChanged();
+}
+
+const TimelineRenderSnapshot& TimelineQuickStateBridge::ghostSnapshot() const
+{
+    return ghostSnapshot_;
 }
 
 void TimelineQuickStateBridge::setWaveformData(

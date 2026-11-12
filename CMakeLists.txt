@@ -129,7 +129,8 @@ configure_file(
     @ONLY
 )
 
-find_package(Qt6 6.10 REQUIRED COMPONENTS Core Concurrent Gui GuiPrivate LinguistTools Multimedia Quick Qml QuickControls2 ShaderTools)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Concurrent Gui LinguistTools Multimedia Quick Qml QuickControls2 ShaderTools)
+find_package(Qt6 QUIET COMPONENTS GuiPrivate)
 
 qt_policy(SET QTP0001 NEW)
 
@@ -137,7 +138,7 @@ qt_policy(SET QTP0001 NEW)
 # (qhwvideobuffer_p.h / qvideotexturehelper_p.h) that QtAVPlayer's
 # QAVVideoFrame -> QVideoFrame bridge needs. The Windows, macOS, and Linux
 # QtAVPlayer preview backends use it (see the QtAVPlayer block below).
-find_package(Qt6 6.10 REQUIRED COMPONENTS MultimediaQuickPrivate)
+find_package(Qt6 6.8 REQUIRED COMPONENTS MultimediaQuickPrivate)
 
 # Pinned ScintillaQuick sources are maintained as a Git submodule.
 set(MIACODE_SCINTILLAQUICK_REVISION "bfa6ae93315942b591878b0e709e1363bc07bfd6")
@@ -684,6 +685,10 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/chrome/MainMenuCommands.qml
     src/app/ui/chrome/MainToolBar.qml
     src/app/ui/chrome/StatusBar.qml
+    src/app/ui/chrome/NoaCopilotStatusPill.qml
+    src/app/ui/editor/NoaCopilotGhostOverlay.qml
+    src/app/ui/editor/NoaCopilotInlineCard.qml
+    src/app/ui/editor/NoaCopilotEmptyCard.qml
     src/app/ui/layout/MainView.qml
     src/app/ui/layout/MainSplitView.qml
     src/app/ui/layout/WelcomePage.qml
@@ -848,6 +853,8 @@ qt_add_qml_module(MiaCode
     VERSION 1.0
     SOURCES
         src/app/ui/ApplicationContext.cpp
+        src/app/ui/noa_copilot/NoaCopilotModel.cpp
+        src/app/ui/noa_copilot/NoaCopilotModel.h
         src/app/ui/net/NetModel.cpp
         src/app/ui/net/NetModel.h
         src/app/ui/net/NetUploadModel.cpp
@@ -959,6 +966,7 @@ target_include_directories(MiaCode PRIVATE
     # qmltyperegistrar includes QML_ELEMENT headers by file name only; project
     # code includes them by their src-rooted path.
     src/app/ui/editor
+    src/app/ui/noa_copilot
     src/app/ui/pet
     src/app/ui/timeline
 )

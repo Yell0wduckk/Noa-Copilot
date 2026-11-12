@@ -26,6 +26,7 @@
 #include <QPainter>
 #include <QMutexLocker>
 #include <QQuickWindow>
+#include <QSGOpacityNode>
 #include <QSGSimpleTextureNode>
 #include <QSGNode>
 
@@ -34,7 +35,7 @@
 
 namespace {
 
-constexpr int kPreviewQuickSceneLayerSlotCount = 18;
+constexpr int kPreviewQuickSceneLayerSlotCount = 19;
 constexpr qint64 kNoteLayersEmptyAnomalyLogIntervalMs = 2000;
 
 class PreviewQuickRootNode final : public QSGNode
@@ -1256,6 +1257,76 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
         preparedCache_.touchHoldLayer().entries.size(),
         touchHoldCursor_.activePreparedIndices.size()
     );
+    updateLayerSlotProfiled(
+        layerSlotAt(root, slotIndex++),
+        !state->ghostNoteMarkers.isEmpty(),
+        "ghost_notes",
+        layerStatsForFrame,
+        [&](QSGNode* oldChild) -> QSGNode* {
+            miacode::preview::scene::PreviewFrameState ghostState = *state;
+            ghostState.noteMarkers = state->ghostNoteMarkers;
+            ghostState.sceneContentRevision = state->ghostSceneContentRevision;
+            ghostState.muriAnalysisReport = {};
+            const bool ghostReleaseStorage =
+                ghostPreparedCache_.key().storageGeneration != ghostState.sceneStorageGeneration;
+            if (ghostPreparedCache_.sync(ghostState)) {
+                ghostGuideCursor_.reset(ghostReleaseStorage);
+                ghostTrackCursor_.reset(ghostReleaseStorage);
+                ghostSlideMotionCursor_.reset(ghostReleaseStorage);
+                ghostHeadCursor_.reset(ghostReleaseStorage);
+                ghostTouchCursor_.reset(ghostReleaseStorage);
+                ghostTouchHoldCursor_.reset(ghostReleaseStorage);
+            }
+            miacode::preview::scene::syncPreviewLayerWindowCursor(
+                ghostPreparedCache_.guideLayer(), playheadSeconds, &ghostGuideCursor_);
+            miacode::preview::scene::syncPreviewLayerWindowCursor(
+                ghostPreparedCache_.slideLikeLayer(), playheadSeconds, &ghostTrackCursor_);
+            miacode::preview::scene::syncPreviewLayerWindowCursor(
+                ghostPreparedCache_.slideLikeLayer(), playheadSeconds, &ghostSlideMotionCursor_);
+            miacode::preview::scene::syncPreviewLayerWindowCursor(
+                ghostPreparedCache_.headLayer(), playheadSeconds, &ghostHeadCursor_);
+            miacode::preview::scene::syncPreviewLayerWindowCursor(
+                ghostPreparedCache_.touchLayer(), playheadSeconds, &ghostTouchCursor_);
+            miacode::preview::scene::syncPreviewLayerWindowCursor(
+                ghostPreparedCache_.touchHoldLayer(), playheadSeconds, &ghostTouchHoldCursor_);
+
+            auto* opacityRoot = dynamic_cast<QSGOpacityNode*>(oldChild);
+            if (opacityRoot == nullptr || opacityRoot->childCount() != 6) {
+                delete oldChild;
+                opacityRoot = new QSGOpacityNode();
+                opacityRoot->setOpacity(0.45);
+                for (int i = 0; i < 6; ++i) {
+                    opacityRoot->appendChildNode(new QSGNode());
+                }
+            } else {
+                opacityRoot->setOpacity(0.45);
+            }
+            updateLayerSlot(layerSlotAt(opacityRoot, 0), true, [&](QSGNode* subOld) {
+                return ghostGuideLayer_.updateNode(
+                    subOld, ghostState, &ghostPreparedCache_, &ghostGuideCursor_, renderSize, window(), textures);
+            });
+            updateLayerSlot(layerSlotAt(opacityRoot, 1), true, [&](QSGNode* subOld) {
+                return ghostTrackLayer_.updateNode(
+                    subOld, ghostState, &ghostPreparedCache_, &ghostTrackCursor_, renderSize, window(), textures);
+            });
+            updateLayerSlot(layerSlotAt(opacityRoot, 2), true, [&](QSGNode* subOld) {
+                return ghostSlideMotionLayer_.updateNode(
+                    subOld, ghostState, &ghostPreparedCache_, &ghostSlideMotionCursor_, renderSize, window(), textures);
+            });
+            updateLayerSlot(layerSlotAt(opacityRoot, 3), true, [&](QSGNode* subOld) {
+                return ghostHeadLayer_.updateNode(
+                    subOld, ghostState, &ghostPreparedCache_, &ghostHeadCursor_, renderSize, window(), textures);
+            });
+            updateLayerSlot(layerSlotAt(opacityRoot, 4), true, [&](QSGNode* subOld) {
+                return ghostTouchLayer_.updateNode(
+                    subOld, ghostState, &ghostPreparedCache_, &ghostTouchCursor_, renderSize, window(), textures);
+            });
+            updateLayerSlot(layerSlotAt(opacityRoot, 5), true, [&](QSGNode* subOld) {
+                return ghostTouchHoldLayer_.updateNode(
+                    subOld, ghostState, &ghostPreparedCache_, &ghostTouchHoldCursor_, renderSize, window(), textures);
+            });
+            return opacityRoot;
+        });
     updateLayerSlotProfiled(
         layerSlotAt(root, slotIndex++),
         miacode::preview::scene::previewRenderLayerEnabled(layerFlags_, miacode::preview::scene::JudgeLayer),

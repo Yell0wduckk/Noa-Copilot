@@ -25,6 +25,7 @@ Item {
     required property var latency
     required property var net
     required property var netUpload
+    property var noaCopilot: null
     property bool compact: false
     property bool timelineGuideActive: false
     property string documentTitle: ""
@@ -543,6 +544,7 @@ Item {
                         previewSession: root.previewSession
                         net: root.net
                         netUpload: root.netUpload
+                        noaCopilot: root.noaCopilot
                         pages: root.pages
                         onOpenRequested: root.openRequested()
                         onCompletionSettingsRequested: function(group) { root.completionSettingsRequested(group) }

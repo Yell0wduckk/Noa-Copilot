@@ -3,7 +3,7 @@ set(preview_qt_components Core Gui Quick Qml ShaderTools)
 if(MIACODE_PREVIEW_MULTIMEDIA)
     list(APPEND preview_qt_components Multimedia)
 endif()
-find_package(Qt6 6.10 REQUIRED COMPONENTS ${preview_qt_components})
+find_package(Qt6 6.8 REQUIRED COMPONENTS ${preview_qt_components})
 qt_policy(SET QTP0001 NEW)
 include(${CMAKE_CURRENT_LIST_DIR}/MiaCodeModules.cmake)
 

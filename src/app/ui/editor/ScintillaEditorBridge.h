@@ -24,6 +24,7 @@ class ScintillaEditorBridge : public ScintillaQuick_item
     Q_PROPERTY(EditorController* controller READ controller WRITE setController NOTIFY bindingsChanged)
     Q_PROPERTY(miacode::EditorSyncController* syncController READ syncController WRITE setSyncController NOTIFY bindingsChanged)
     Q_PROPERTY(AnalysisModel* analysisSession READ analysisSession WRITE setAnalysisSession NOTIFY bindingsChanged)
+    Q_PROPERTY(QObject* noaCopilot READ noaCopilot WRITE setNoaCopilot NOTIFY bindingsChanged)
     Q_PROPERTY(bool navigationVisible READ navigationVisible WRITE setNavigationVisible NOTIFY bindingsChanged)
     // The hosting QML surface owns the theme fill, including wallpaper opacity.
     Q_PROPERTY(QColor sceneBackgroundColor READ sceneBackgroundColor CONSTANT)
@@ -61,10 +62,12 @@ public:
     EditorController* controller() const { return controller_; }
     miacode::EditorSyncController* syncController() const { return syncController_; }
     AnalysisModel* analysisSession() const { return analysisSession_; }
+    QObject* noaCopilot() const { return noaCopilot_; }
     void setDocumentSession(DocumentModel* value);
     void setController(EditorController* value);
     void setSyncController(miacode::EditorSyncController* value);
     void setAnalysisSession(AnalysisModel* value);
+    void setNoaCopilot(QObject* value);
     bool navigationVisible() const { return navigationVisible_; }
     void setNavigationVisible(bool value);
     QVariantMap editorColors() const { return palette_; }
@@ -122,8 +125,11 @@ public:
     Q_INVOKABLE bool createBookmarkAtLine(int line, const QString& title);
     Q_INVOKABLE bool renameBookmarkAtLine(int line, const QString& title);
     Q_INVOKABLE bool deleteBookmarkAtLine(int line);
+    Q_INVOKABLE bool replaceTextRange(int startPos, int endPos, const QString& replacementText, int newCursorPos = -1);
 signals:
     void bindingsChanged();
+    void inlineCopilotRequested();
+    void manualGhostRequested();
     void editorColorsChanged();
     void appearanceChanged();
     void layoutChanged();
@@ -243,5 +249,6 @@ private:
     QHash<int, TouchUndoAnchor> touchUndoAnchors_;
     int nextTouchToken_ = 1;
     int pendingTouchAnchor_ = -1;
+    QPointer<QObject> noaCopilot_;
 };
 }

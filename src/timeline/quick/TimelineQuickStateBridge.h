@@ -51,6 +51,8 @@ public:
     void setTimelineData(const TimelineRenderSnapshot& snapshot);
     void replaceTimelineData(const TimelineRenderSnapshot& snapshot, double second, double durationSeconds);
     const TimelineRenderSnapshot& renderSnapshot() const;
+    void setGhostSnapshot(const TimelineRenderSnapshot& snapshot);
+    const TimelineRenderSnapshot& ghostSnapshot() const;
     void setWaveformData(const std::shared_ptr<const miacode::waveform::WaveformData>& waveformData);
     std::shared_ptr<const miacode::waveform::WaveformData> waveformData() const;
     void setMuriAnalysisReport(const MuriAnalysisReport& report);
@@ -128,6 +130,7 @@ public:
     quint64 waveformRevision() const { return waveformRevision_; }
     quint64 headerRevision() const { return headerRevision_; }
     quint64 notesRevision() const { return notesRevision_; }
+    quint64 ghostNotesRevision() const { return ghostNotesRevision_; }
     quint64 overlayRevision() const { return overlayRevision_; }
     quint64 overlayDynamicRevision() const { return overlayDynamicRevision_; }
 
@@ -164,6 +167,7 @@ private:
     void bumpOverlayDynamicRevision();
 
     TimelineRenderSnapshot snapshot_;
+    TimelineRenderSnapshot ghostSnapshot_;
     std::shared_ptr<const miacode::waveform::WaveformData> waveformData_;
     QHash<quint64, QVector<miacode::timeline::TimelineMuriMarkerPlacement>> muriMarkersByLocation_;
     QHash<quint64, QString> muriMarkerTooltips_;
@@ -197,6 +201,7 @@ private:
     quint64 waveformRevision_ = 1;
     quint64 headerRevision_ = 1;
     quint64 notesRevision_ = 1;
+    quint64 ghostNotesRevision_ = 1;
     quint64 overlayRevision_ = 1;
     quint64 overlayDynamicRevision_ = 1;
 };

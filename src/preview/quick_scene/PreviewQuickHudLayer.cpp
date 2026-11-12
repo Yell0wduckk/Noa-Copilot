@@ -11,7 +11,23 @@
 
 #include <QFontMetrics>
 #include <QPainter>
+#if __has_include(<QPainterStateGuard>)
 #include <QPainterStateGuard>
+#else
+class QPainterStateGuard {
+public:
+    explicit QPainterStateGuard(QPainter* p) : painter_(p) {
+        if (painter_) painter_->save();
+    }
+    ~QPainterStateGuard() {
+        if (painter_) painter_->restore();
+    }
+    QPainterStateGuard(const QPainterStateGuard&) = delete;
+    QPainterStateGuard& operator=(const QPainterStateGuard&) = delete;
+private:
+    QPainter* painter_ = nullptr;
+};
+#endif
 #include <QPaintDevice>
 #include <QPainterPath>
 #include <QQuickWindow>

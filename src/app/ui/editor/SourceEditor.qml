@@ -12,6 +12,23 @@ Rectangle {
     required property var syncController
     required property var analysisSession
     property var preferences: null
+    property var noaCopilot: null
+    onNoaCopilotChanged: {
+        if (root.noaCopilot)
+            root.noaCopilot.bindEditor(sourceArea)
+    }
+    function notifyNoaCopilotState() {
+        if (!root.noaCopilot)
+            return
+        root.noaCopilot.notifyEditorCursorOrTextChanged(
+            sourceArea.cursorPosition,
+            sourceArea.selectionStart,
+            sourceArea.selectionEnd,
+            sourceArea.text,
+            sourceArea.imeComposing,
+            root.editorController ? root.editorController.completionActive : false,
+            root.syncController ? root.syncController.followPlaybackActive : false)
+    }
     readonly property bool overviewRulerEnabled: preferences ? preferences.editorOverviewRulerEnabled : false
     property bool navigationVisible: false
     onNavigationVisibleChanged: {
@@ -303,6 +320,12 @@ Rectangle {
                 action("qml.normalize_whole_chart", "normalize")
             if (transform)
                 rows.push({ kind: "submenu", labelKey: "action.transform.more", operation: "" })
+            if (root.noaCopilot && root.noaCopilot.enabled && !sourceArea.readonly) {
+                separator()
+                action("NoaCopilot: 续写当前拍 (Alt+\\)", "noa_continue")
+                action("NoaCopilot: 段落生成 (Ctrl+K)", "noa_inline")
+                action("NoaCopilot: 生成整曲初稿", "noa_full")
+            }
             menuEntries.clear()
             for (const row of rows)
                 menuEntries.append(row)
@@ -320,6 +343,9 @@ Rectangle {
             case "find": root.openFindReplace(); break
             case "export": root.exportSelectionRange(); break
             case "normalize": root.normalizeChartRequested(); break
+            case "noa_continue": if (root.noaCopilot) root.noaCopilot.triggerManualContinue(); break
+            case "noa_inline": if (root.noaCopilot) root.noaCopilot.openInlineCard(); break
+            case "noa_full": if (root.noaCopilot) root.noaCopilot.triggerFullChartStream(); break
             default: root.applyChartTransform(operation); break
             }
         }
@@ -412,6 +438,11 @@ Rectangle {
         controller: root.editorController
         syncController: root.syncController
         analysisSession: root.analysisSession
+        noaCopilot: root.noaCopilot
+        Component.onCompleted: {
+            if (root.noaCopilot)
+                root.noaCopilot.bindEditor(sourceArea)
+        }
         navigationVisible: root.navigationVisible
         font: Theme.codeFont
         HoverHandler {
@@ -456,12 +487,34 @@ Rectangle {
         onSelectionChanged: {
             root.viewState.editorCursorLine = cursorLine
             root.viewState.editorCursorColumn = cursorColumn
+            root.notifyNoaCopilotState()
         }
         onActiveFocusChanged: {
             if (!activeFocus && !completionPopup.pointerInside)
                 root.editorController.closeCompletion()
         }
         onFindRequested: root.openFindReplace()
+        onTextChanged: root.notifyNoaCopilotState()
+        onInlineCopilotRequested: {
+            if (root.noaCopilot)
+                root.noaCopilot.openInlineCard()
+        }
+        onManualGhostRequested: {
+            if (root.noaCopilot)
+                root.noaCopilot.triggerManualContinue()
+        }
+        NoaCopilotGhostOverlay {
+            editor: sourceArea
+            noaCopilot: root.noaCopilot
+        }
+        NoaCopilotInlineCard {
+            editor: sourceArea
+            noaCopilot: root.noaCopilot
+        }
+        NoaCopilotEmptyCard {
+            editor: sourceArea
+            noaCopilot: root.noaCopilot
+        }
         onContextMenuRequested: (x, y) => root.openContextMenuAt(x, y)
         onBookmarkMenuRequested: (line, x, y) => {
             root.pendingBookmarkLine = line

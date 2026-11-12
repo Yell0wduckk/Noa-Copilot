@@ -20,6 +20,7 @@
 #include "app/ui/pet/PetOverlayController.h"
 #include "app/ui/net/NetModel.h"
 #include "app/ui/net/NetUploadModel.h"
+#include "app/ui/noa_copilot/NoaCopilotModel.h"
 #include "app/services/ApplicationServices.h"
 #include "app/services/ImageResourceModel.h"
 
@@ -62,6 +63,7 @@ class ApplicationContext final : public QObject
     Q_PROPERTY(QObject* update READ update CONSTANT)
     Q_PROPERTY(QObject* net READ net CONSTANT)
     Q_PROPERTY(QObject* netUpload READ netUpload CONSTANT)
+    Q_PROPERTY(QObject* noaCopilot READ noaCopilot CONSTANT)
 
 public:
     explicit ApplicationContext(miacode::ApplicationServices& services,
@@ -94,6 +96,7 @@ public:
     QObject* update();
     QObject* net();
     QObject* netUpload() { return &netUpload_; }
+    QObject* noaCopilot() { return &noaCopilot_; }
     void setWindowChrome(QObject* chrome);
     void setChartDropBridge(QObject* bridge);
 
@@ -122,6 +125,7 @@ private:
     miacode::ui::PetOverlayController pet_;
     NetModel net_;
     NetUploadModel netUpload_;
+    NoaCopilotModel noaCopilot_;
     miacode::ui::ShellLifecycle lifecycle_;
     QObject* windowChrome_ = nullptr;
     QObject* chartDropBridge_ = nullptr;
