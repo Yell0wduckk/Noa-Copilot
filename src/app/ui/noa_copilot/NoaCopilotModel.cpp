@@ -225,7 +225,7 @@ QVariantList NoaCopilotModel::envModeOptions() const
 QVariantList NoaCopilotModel::sourceModeOptions() const
 {
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Spine417 v4)")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Flat320 v18.3)")}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("custom")}, {QStringLiteral("label"), QStringLiteral("自定义 Worktree / 推理源码目录")}},
     };
 }
@@ -250,11 +250,18 @@ void NoaCopilotModel::loadPreferences()
     QJsonObject defaults;
     if (runtimeSettings.open(QIODevice::ReadOnly))
         defaults = QJsonDocument::fromJson(runtimeSettings.readAll()).object();
-    wslPython_ = sec.value(QStringLiteral("wsl_python")).toString(defaults.value(QStringLiteral("python")).toString());
+    const QString bundledPython = defaults.value(QStringLiteral("python")).toString();
+    wslPython_ = sec.value(QStringLiteral("wsl_python")).toString(bundledPython);
     wslDistribution_ = sec.value(QStringLiteral("wsl_distribution")).toString(defaults.value(QStringLiteral("distribution")).toString());
     customPythonPath_ = sec.value(QStringLiteral("custom_python_path")).toString();
     sourceMode_ = normalizeModeToken(sec.value(QStringLiteral("source_mode")).toString(QStringLiteral("bundled")));
     customSourceRoot_ = sec.value(QStringLiteral("custom_source_root")).toString();
+    // The previous Windows bundle saved its default interpreter in user preferences.
+    if (sourceMode_ == QStringLiteral("bundled") && pythonMode_ == QStringLiteral("bundled")
+        && !bundledPython.isEmpty() && wslDistribution_ == defaults.value(QStringLiteral("distribution")).toString()
+        && (wslPython_.isEmpty() || wslPython_ == defaults.value(QStringLiteral("previous_python")).toString())) {
+        wslPython_ = bundledPython;
+    }
 
     if (creativityPreset_ != QStringLiteral("custom")) {
         applyCreativityPresetValues(creativityPreset_);

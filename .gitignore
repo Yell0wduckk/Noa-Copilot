@@ -130,6 +130,8 @@ scripts/build/*
 !scripts/build/package.py
 !scripts/build/package-mac.sh
 !scripts/build/package-win.ps1
+!scripts/build/export-mert-v2-l4.py
+!scripts/build/stage-noa-copilot.ps1
 !scripts/build/provision-qt.ps1
 !scripts/build/windows-toolchain.psd1
 !scripts/debug/
@@ -196,3 +198,4 @@ __pycache__/
 /third_party/spine417-models/
 /third_party/spine417-features/
 /third_party/noa-copilot-env/
+/third_party/flat320-features/

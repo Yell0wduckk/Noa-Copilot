@@ -646,9 +646,9 @@ if (Test-Path $ffmpegSrc) {
 
 # Include the provisioned x64 inference bundle in local desktop distributions.
 # Upstream builds and ARM64 packages can still use an external interpreter.
-$spineModels = if ($env:MIACODE_SPINE_MODELS) { $env:MIACODE_SPINE_MODELS } else { Join-Path $repoRoot "third_party/spine417-features" }
-if ($Arch -eq "x64" -and ($env:MIACODE_SPINE_MODELS -or (Test-Path -LiteralPath $spineModels))) {
-    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -ModelsSource $spineModels
+$flatModels = if ($env:MIACODE_FLAT_MODELS) { $env:MIACODE_FLAT_MODELS } else { Join-Path $repoRoot "third_party/flat320-features" }
+if ($Arch -eq "x64" -and ($env:MIACODE_FLAT_MODELS -or (Test-Path -LiteralPath $flatModels))) {
+    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -ModelsSource $flatModels
 }
 
 # Required package contents come from the toolchain data file.
