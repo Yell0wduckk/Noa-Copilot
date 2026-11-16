@@ -27,9 +27,9 @@ if ($LASTEXITCODE) { throw "Unable to resolve $SourceRevision in $WorktreeRoot" 
 $sourceDir = New-Item -ItemType Directory -Force (Join-Path $runtime "runtime-src")
 $archive = [IO.Path]::GetTempFileName()
 try {
-    git -C $WorktreeRoot archive --format=tar "--output=$archive" "${revision}:src" maidata
+    git -C $WorktreeRoot archive --format=tar "--output=$archive" $revision src/maidata
     if ($LASTEXITCODE) { throw "Unable to archive maidata at $revision" }
-    tar -xf $archive -C $sourceDir.FullName
+    tar -xf $archive -C $sourceDir.FullName --strip-components 1
     if ($LASTEXITCODE) { throw "Unable to unpack the maidata runtime" }
 } finally {
     Remove-Item -LiteralPath $archive -Force
