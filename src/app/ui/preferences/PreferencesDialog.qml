@@ -1033,6 +1033,20 @@ AppDialog {
                             onToggled: if (root.noaCopilot) root.noaCopilot.autoContinueEnabled = checked
                         }
 
+                        PreferenceSwitch {
+                            text: "使用 Conv 音频特征"
+                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                            checked: root.noaCopilot ? root.noaCopilot.convEnabled : true
+                            onToggled: if (root.noaCopilot) root.noaCopilot.convEnabled = checked
+                        }
+
+                        PreferenceSwitch {
+                            text: "使用 MERT 音频特征"
+                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                            checked: root.noaCopilot ? root.noaCopilot.mertEnabled : true
+                            onToggled: if (root.noaCopilot) root.noaCopilot.mertEnabled = checked
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.minimumHeight: root.settingsRowHeight

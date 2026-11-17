@@ -241,6 +241,8 @@ void NoaCopilotModel::loadPreferences()
     device_ = sec.value(QStringLiteral("device")).toString(QStringLiteral("auto"));
     precision_ = sec.value(QStringLiteral("precision")).toString(QStringLiteral("bf16"));
     temperature_ = sec.value(QStringLiteral("temperature")).toDouble(1.0);
+    convEnabled_ = sec.value(QStringLiteral("conv_enabled")).toBool(true);
+    mertEnabled_ = sec.value(QStringLiteral("mert_enabled")).toBool(true);
     seed_ = sec.value(QStringLiteral("seed")).toInt(-1);
     debounceMs_ = qBound(150, sec.value(QStringLiteral("debounce_ms")).toInt(420), 3000);
     checkpointPath_ = sec.value(QStringLiteral("checkpoint_path")).toString();
@@ -279,6 +281,8 @@ void NoaCopilotModel::savePreferences() const
     sec.insert(QStringLiteral("device"), device_);
     sec.insert(QStringLiteral("precision"), precision_);
     sec.insert(QStringLiteral("temperature"), temperature_);
+    sec.insert(QStringLiteral("conv_enabled"), convEnabled_);
+    sec.insert(QStringLiteral("mert_enabled"), mertEnabled_);
     sec.insert(QStringLiteral("seed"), seed_);
     sec.insert(QStringLiteral("debounce_ms"), debounceMs_);
     sec.insert(QStringLiteral("checkpoint_path"), checkpointPath_);
@@ -450,6 +454,22 @@ void NoaCopilotModel::setPrecision(const QString& value)
     if (enabled_) {
         sendConfigureRequest();
     }
+}
+
+void NoaCopilotModel::setConvEnabled(bool enabled)
+{
+    if (convEnabled_ == enabled) return;
+    convEnabled_ = enabled;
+    savePreferences();
+    emit configChanged();
+}
+
+void NoaCopilotModel::setMertEnabled(bool enabled)
+{
+    if (mertEnabled_ == enabled) return;
+    mertEnabled_ = enabled;
+    savePreferences();
+    emit configChanged();
 }
 
 void NoaCopilotModel::setTemperature(double value)
@@ -1107,6 +1127,8 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("span_beats"), qMax(1, spanBeats));
     req.insert(QStringLiteral("fill_to_next"), fillToNext);
     req.insert(QStringLiteral("temperature"), temperature_);
+    req.insert(QStringLiteral("conv_enabled"), convEnabled_);
+    req.insert(QStringLiteral("mert_enabled"), mertEnabled_);
     req.insert(QStringLiteral("seed"), seed_);
     writeDaemonJson(req);
 }

@@ -48,6 +48,8 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QVariantList availableCheckpoints READ availableCheckpoints NOTIFY checkpointsChanged)
 
     // ---- Primary Generation Controls ----
+    Q_PROPERTY(bool convEnabled READ convEnabled WRITE setConvEnabled NOTIFY configChanged)
+    Q_PROPERTY(bool mertEnabled READ mertEnabled WRITE setMertEnabled NOTIFY configChanged)
     Q_PROPERTY(QString creativityPreset READ creativityPreset WRITE setCreativityPreset NOTIFY configChanged)
     Q_PROPERTY(QVariantList creativityPresetOptions READ creativityPresetOptions CONSTANT)
     Q_PROPERTY(QString defaultDesigner READ defaultDesigner WRITE setDefaultDesigner NOTIFY configChanged)
@@ -145,6 +147,10 @@ public:
     QVariantList availableCheckpoints() const { return availableCheckpoints_; }
 
     QString creativityPreset() const { return creativityPreset_; }
+    bool convEnabled() const { return convEnabled_; }
+    void setConvEnabled(bool enabled);
+    bool mertEnabled() const { return mertEnabled_; }
+    void setMertEnabled(bool enabled);
     void setCreativityPreset(const QString& preset);
     QVariantList creativityPresetOptions() const;
 
@@ -350,6 +356,8 @@ private:
     QString device_ = QStringLiteral("auto");
     QString precision_ = QStringLiteral("bf16");
     double temperature_ = 1.0;
+    bool convEnabled_ = true;
+    bool mertEnabled_ = true;
     int seed_ = -1;
     int debounceMs_ = 420;
     QString checkpointPath_;
