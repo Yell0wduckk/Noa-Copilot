@@ -225,7 +225,7 @@ QVariantList NoaCopilotModel::envModeOptions() const
 QVariantList NoaCopilotModel::sourceModeOptions() const
 {
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Flat320 v18.3)")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Flat320 v18.4)")}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("custom")}, {QStringLiteral("label"), QStringLiteral("自定义 Worktree / 推理源码目录")}},
     };
 }
