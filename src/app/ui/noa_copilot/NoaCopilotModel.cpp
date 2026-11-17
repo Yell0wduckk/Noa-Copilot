@@ -1784,10 +1784,7 @@ double NoaCopilotModel::currentChartBpm() const
 
 double NoaCopilotModel::currentChartFirstSeconds() const
 {
-    bool ok = false;
-    const double first = document_.metadataFirst().trimmed().toDouble(&ok);
-    const double offset = document_.currentDifficultyOffset().trimmed().toDouble();
-    return (ok ? first : 0.0) + offset;
+    return document_.metadataFirst().trimmed().toDouble();
 }
 
 double NoaCopilotModel::parseLevelNumeric(const QString& levelText) const
