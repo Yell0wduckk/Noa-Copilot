@@ -11,13 +11,13 @@ from safetensors.numpy import save_file
 
 def export(source, output):
     config = json.loads((source / "config.json").read_text(encoding="utf-8"))
-    config["num_hidden_layers"] = 4
+    config["num_hidden_layers"] = 8
     output.mkdir(parents=True, exist_ok=True)
     with safe_open(source / "model.safetensors", framework="numpy") as weights:
         selected = {
             key: weights.get_tensor(key)
             for key in weights.keys()
-            if not key.startswith("layers.") or int(key.split(".", 2)[1]) < 4
+            if not key.startswith("layers.") or int(key.split(".", 2)[1]) < 8
         }
         save_file(selected, output / "model.safetensors", metadata=weights.metadata())
     (output / "config.json").write_text(
@@ -29,10 +29,10 @@ def export(source, output):
     ):
         shutil.copyfile(source / name, output / name)
     (output / "README.md").write_text(
-        "# MERT-v2-FullSong L4\n\n"
+        "# MERT-v2-FullSong L8\n\n"
         "Source: [m-a-p/MERT-v2-FullSong](https://huggingface.co/m-a-p/MERT-v2-FullSong). "
-        "This Flat320 export retains the original frontend, subsampler and first four "
-        "Conformer blocks at their original precision. Blocks 5 through 24 were removed. "
+        "This Flat320 export retains the original frontend, subsampler and first eight "
+        "Conformer blocks at their original precision. Blocks 9 through 24 were removed. "
         "Weights are licensed under [CC BY-NC 4.0](LICENSE).\n",
         encoding="utf-8",
     )

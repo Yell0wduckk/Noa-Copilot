@@ -46,7 +46,7 @@ if ($WslDistribution -eq "Ubuntu-22.04") {
     $wslSettings.previous_python = "/home/dev/.venvs/maimai-structure-v1/songformer/bin/python"
 }
 $wslSettings | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runtime "wsl.json")
-@{ source=$revision; architecture="maidata.maimai-flat320.mel2d-mertv2l4.hetero5-uob.rule6.v18.3";
-   mert="m-a-p/MERT-v2-FullSong L4"; mel="DualWindowMel-125Hz" } |
+@{ source=$revision; architecture="maidata.maimai-flat320.grid24-mel2d-mertv2l8.hetero5-uob.rule6.v18.4";
+   mert="m-a-p/MERT-v2-FullSong L8"; mel="DualWindowMel-125Hz" } |
     ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runtime "runtime.json")
 $global:LASTEXITCODE = 0
