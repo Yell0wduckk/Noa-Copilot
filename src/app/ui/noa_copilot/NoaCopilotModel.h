@@ -63,6 +63,7 @@ class NoaCopilotModel final : public QObject
 
     // ---- Advanced Sampling & Runtime Controls ----
     Q_PROPERTY(double temperature READ temperature WRITE setTemperature NOTIFY configChanged)
+    Q_PROPERTY(double slideBias READ slideBias WRITE setSlideBias NOTIFY configChanged)
     Q_PROPERTY(int seed READ seed WRITE setSeed NOTIFY configChanged)
     Q_PROPERTY(int debounceMs READ debounceMs WRITE setDebounceMs NOTIFY configChanged)
 
@@ -168,6 +169,8 @@ public:
 
     double temperature() const { return temperature_; }
     void setTemperature(double value);
+    double slideBias() const { return slideBias_; }
+    void setSlideBias(double value);
 
 
 
@@ -356,6 +359,7 @@ private:
     QString device_ = QStringLiteral("auto");
     QString precision_ = QStringLiteral("bf16");
     double temperature_ = 1.0;
+    double slideBias_ = 0.0;
     bool convEnabled_ = true;
     bool mertEnabled_ = true;
     int seed_ = -1;

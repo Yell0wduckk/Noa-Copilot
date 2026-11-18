@@ -1047,6 +1047,17 @@ AppDialog {
                             onToggled: if (root.noaCopilot) root.noaCopilot.mertEnabled = checked
                         }
 
+                        PreferenceSlider {
+                            label: "Slide 偏置"
+                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                            from: 0.0
+                            to: 4.0
+                            stepSize: 0.1
+                            decimals: 1
+                            value: root.noaCopilot ? root.noaCopilot.slideBias : 0.0
+                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideBias = v }
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.minimumHeight: root.settingsRowHeight

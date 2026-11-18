@@ -241,6 +241,7 @@ void NoaCopilotModel::loadPreferences()
     device_ = sec.value(QStringLiteral("device")).toString(QStringLiteral("auto"));
     precision_ = sec.value(QStringLiteral("precision")).toString(QStringLiteral("bf16"));
     temperature_ = sec.value(QStringLiteral("temperature")).toDouble(1.0);
+    slideBias_ = sec.value(QStringLiteral("slide_bias")).toDouble(0.0);
     convEnabled_ = sec.value(QStringLiteral("conv_enabled")).toBool(true);
     mertEnabled_ = sec.value(QStringLiteral("mert_enabled")).toBool(true);
     seed_ = sec.value(QStringLiteral("seed")).toInt(-1);
@@ -281,6 +282,7 @@ void NoaCopilotModel::savePreferences() const
     sec.insert(QStringLiteral("device"), device_);
     sec.insert(QStringLiteral("precision"), precision_);
     sec.insert(QStringLiteral("temperature"), temperature_);
+    sec.insert(QStringLiteral("slide_bias"), slideBias_);
     sec.insert(QStringLiteral("conv_enabled"), convEnabled_);
     sec.insert(QStringLiteral("mert_enabled"), mertEnabled_);
     sec.insert(QStringLiteral("seed"), seed_);
@@ -480,6 +482,14 @@ void NoaCopilotModel::setTemperature(double value)
     }
     temperature_ = value;
     creativityPreset_ = QStringLiteral("custom");
+    savePreferences();
+    emit configChanged();
+}
+
+void NoaCopilotModel::setSlideBias(double value)
+{
+    if (qFuzzyCompare(slideBias_, value)) return;
+    slideBias_ = value;
     savePreferences();
     emit configChanged();
 }
@@ -1127,6 +1137,7 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("span_beats"), qMax(1, spanBeats));
     req.insert(QStringLiteral("fill_to_next"), fillToNext);
     req.insert(QStringLiteral("temperature"), temperature_);
+    req.insert(QStringLiteral("slide_bias"), slideBias_);
     req.insert(QStringLiteral("conv_enabled"), convEnabled_);
     req.insert(QStringLiteral("mert_enabled"), mertEnabled_);
     req.insert(QStringLiteral("seed"), seed_);
