@@ -5,7 +5,8 @@ param(
     [string]$PythonEnvSource = $env:MIACODE_NOA_PYTHON_ENV,
     [string]$ModelsSource = $env:MIACODE_FLAT_MODELS,
     [string]$WslDistribution = $env:MIACODE_WSL_DISTRO,
-    [string]$WslPython = $env:MIACODE_WSL_PYTHON
+    [string]$WslPython = $env:MIACODE_WSL_PYTHON,
+    [switch]$SourceOnly
 )
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -31,9 +32,22 @@ try {
     if ($LASTEXITCODE) { throw "Unable to archive maidata at $revision" }
     tar -xf $archive -C $sourceDir.FullName --strip-components 1
     if ($LASTEXITCODE) { throw "Unable to unpack the maidata runtime" }
+    $legacyRevision = "da8a1228af6c3e750d7a1b759751a3712b8b585e"
+    $legacyDir = New-Item -ItemType Directory -Force (Join-Path $sourceDir.FullName "maidata/flat_v184")
+    git -C $WorktreeRoot archive --format=tar "--output=$archive" $legacyRevision src/maidata/flat
+    if ($LASTEXITCODE) { throw "Unable to archive the v18.4 decoder" }
+    tar -xf $archive -C $legacyDir.FullName --strip-components 3
+    if ($LASTEXITCODE) { throw "Unable to unpack the v18.4 decoder" }
 } finally {
     Remove-Item -LiteralPath $archive -Force
 }
+$identity = Get-Content -Raw (Join-Path $sourceDir.FullName "maidata/flat/__init__.py")
+$architecture = [regex]::Match($identity, '(?m)^ARCHITECTURE = "([^"]+)"').Groups[1].Value
+@{ source=$revision; architecture=$architecture; legacy_v184_source=$legacyRevision;
+   mert="m-a-p/MERT-v2-FullSong L8"; mel="DualWindowMel-125Hz" } |
+    ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runtime "runtime.json")
+if ($SourceOnly) { return }
+
 Copy-RuntimeTree $PythonEnvSource (Join-Path $runtime "env")
 $dst = New-Item -ItemType Directory -Force (Join-Path $runtime "models/mert-v2")
 foreach ($name in @("config.json", "model.safetensors", "configuration_mert2.py", "modeling_mert2.py",
@@ -46,7 +60,4 @@ if ($WslDistribution -eq "Ubuntu-22.04") {
     $wslSettings.previous_python = "/home/dev/.venvs/maimai-structure-v1/songformer/bin/python"
 }
 $wslSettings | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runtime "wsl.json")
-@{ source=$revision; architecture="maidata.maimai-flat320.grid24-mel2d-mertv2l8.hetero5-uob.rule6.v18.4";
-   mert="m-a-p/MERT-v2-FullSong L8"; mel="DualWindowMel-125Hz" } |
-    ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runtime "runtime.json")
 $global:LASTEXITCODE = 0

@@ -375,15 +375,14 @@ void BassPreviewAudioBackend::configureTimeline(
     const PreviewTimingSettings& timingSettings)
 {
     MC_OP("BassPreviewAudioBackend::configureTimeline");
-    const bool rearmScheduler = playbackSession_.masterRunning;
-    const double liveChartSecond = liveChartSecondEstimate();
-    if (rearmScheduler) {
-        disarmSfxScheduler("configure_timeline");
-    }
+    const SuspendedSfxScheduler suspended = suspendSfxSchedulerForTimelineUpdate("configure_timeline");
     rebuildPreparedTimeline(noteMarkers, playbackRate, timingSettings);
-    if (rearmScheduler && playbackSession_.masterRunning) {
-        resetCursor(liveChartSecond, false);
-        anchorSfxScheduler(liveChartSecond);
+    if (suspended.active) {
+        resumeSfxSchedulerAfterTimelineUpdate(suspended);
+    } else if (playbackSession_.masterRunning) {
+        // A native scheduling failure leaves the session on its existing
+        // fallback. Replace its table cursor without reviving an invalid anchor.
+        resetCursor(liveChartSecondEstimate(), false);
     }
 }
 

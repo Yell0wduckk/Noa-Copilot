@@ -218,6 +218,11 @@ ChartWorkspaceFileResult ChartWorkspaceFileService::save(int difficultyId) const
     return writeToPath(workspace_->snapshot().filePath, difficultyId);
 }
 
+ChartWorkspaceFileResult ChartWorkspaceFileService::saveGeneratedChart(int difficultyId, const QString& chart) const
+{
+    return writeToPath(workspace_ ? workspace_->snapshot().filePath : QString(), difficultyId, &chart);
+}
+
 ChartWorkspaceFileResult ChartWorkspaceFileService::saveAs(const QString& path, int difficultyId) const
 {
     return writeToPath(path, difficultyId);
@@ -240,7 +245,7 @@ std::optional<QString> ChartWorkspaceFileService::decodeDocumentText(
 }
 
 ChartWorkspaceFileResult ChartWorkspaceFileService::writeToPath(
-    const QString& path, int difficultyId) const
+    const QString& path, int difficultyId, const QString* generatedChart) const
 {
     if (workspace_ == nullptr) return {false, 0, QStringLiteral("workspace_unavailable"), {}};
     const QString normalizedPath = path.isEmpty() ? QString() : QDir::cleanPath(path);
@@ -258,6 +263,7 @@ ChartWorkspaceFileResult ChartWorkspaceFileService::writeToPath(
     }
 
     SimaiDocument savedDocument = workspace_->documentForSectionSave(difficultyId);
+    if (generatedChart) savedDocument.ensureDifficulty(difficultyId).chart = *generatedChart;
     QString currentVideoPath = workspace_->document().videoPath;
     const QDir sourceDirectory = QFileInfo(before.filePath).absoluteDir();
     const QDir targetDirectory = QFileInfo(normalizedPath).absoluteDir();
@@ -296,7 +302,7 @@ ChartWorkspaceFileResult ChartWorkspaceFileService::writeToPath(
     if (!file.commit()) return fileFailure(QStringLiteral("commit_failed"));
 
     if (transaction) transaction->commit();
-    workspace_->markSectionSaved(savedDocument, normalizedPath, currentVideoPath);
+    workspace_->markSectionSaved(savedDocument, normalizedPath, currentVideoPath, generatedChart ? difficultyId : 0);
     return {true, workspace_->snapshot().revision, QString(), {}};
 }
 

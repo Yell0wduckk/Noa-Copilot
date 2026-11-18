@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
@@ -332,6 +333,8 @@ private:
     void handleDaemonReadyReadStderr();
     void handleDaemonMessage(const QJsonObject& message);
 
+    bool publishFullChart(const QString& text);
+    void endFullStream();
     void updateGhostSplitLines();
     void applyDualSurfaceGhostPreview(
         const QString& ghostSimai,
@@ -436,7 +439,9 @@ private:
     double streamingProgress_ = 0.0;
     int streamingBeat_ = 0;
     int streamingTotalBeats_ = 0;
-    QString fullStreamingInitialText_;
+    QTimer streamFlushTimer_;
+    QElapsedTimer lastStreamFlush_;
+    QString pendingStreamChart_;
 };
 
 } // namespace miacode::ui

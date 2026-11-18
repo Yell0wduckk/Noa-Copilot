@@ -306,6 +306,22 @@ void DocumentModel::setChartText(const QString& value)
     publishWorkspaceCommit(WorkspaceCommitKind::ChartText);
 }
 
+bool DocumentModel::applyGeneratedChart(const QString& text)
+{
+    const bool saveToFile = !currentFilePath().isEmpty() && !workspace_->isNetPreview();
+    miacode::ChartWorkspaceFileResult result;
+    if (!runWorkspaceMutation([&] {
+            if (!saveToFile) return workspace_->replaceActiveDifficultyChart(text, true).accepted;
+            result = fileService_->saveGeneratedChart(currentDifficultyId(), text);
+            return result.accepted;
+        })) {
+        if (saveToFile) noticeChartSaveFailed(result);
+        return false;
+    }
+    publishWorkspaceCommit(WorkspaceCommitKind::ChartText);
+    return true;
+}
+
 QString DocumentModel::metadataTitle() const
 {
     return documentField(miacode::ChartWorkspaceDocumentField::Title);

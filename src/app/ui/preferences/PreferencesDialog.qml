@@ -1047,17 +1047,6 @@ AppDialog {
                             onToggled: if (root.noaCopilot) root.noaCopilot.mertEnabled = checked
                         }
 
-                        PreferenceSlider {
-                            label: "Slide 偏置"
-                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                            from: 0.0
-                            to: 4.0
-                            stepSize: 0.1
-                            decimals: 1
-                            value: root.noaCopilot ? root.noaCopilot.slideBias : 0.0
-                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideBias = v }
-                        }
-
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.minimumHeight: root.settingsRowHeight
@@ -1278,6 +1267,41 @@ AppDialog {
                                     suffix: " ms"
                                     value: root.noaCopilot ? root.noaCopilot.debounceMs : 420
                                     onMoved: v => { if (root.noaCopilot) root.noaCopilot.debounceMs = Math.round(v) }
+                                }
+
+                                PreferenceSlider {
+                                    label: "Slide 偏置"
+                                    suffix: ""
+                                    enabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                                    from: 0.0
+                                    to: 4.0
+                                    stepSize: 0.1
+                                    decimals: 1
+                                    value: root.noaCopilot ? root.noaCopilot.slideBias : 0.0
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideBias = v }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        Layout.preferredWidth: root.settingsLabelWidth
+                                        text: "随机种子"
+                                        color: Theme.colors.text.secondary
+                                    }
+                                    AppTextField {
+                                        Layout.fillWidth: true
+                                        validator: IntValidator { bottom: -1; top: 2147483647 }
+                                        text: root.noaCopilot ? String(root.noaCopilot.seed) : "-1"
+                                        onEditingFinished: {
+                                            if (acceptableInput && root.noaCopilot)
+                                                root.noaCopilot.seed = Number(text)
+                                            text = Qt.binding(() => root.noaCopilot ? String(root.noaCopilot.seed) : "-1")
+                                        }
+                                    }
+                                    Text {
+                                        text: "-1 随机"
+                                        color: Theme.colors.text.secondary
+                                    }
                                 }
 
                                 PreferenceSlider {

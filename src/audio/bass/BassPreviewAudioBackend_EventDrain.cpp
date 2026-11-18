@@ -20,7 +20,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QtMath>
+#include <QScopeGuard>
 
+#include <algorithm>
 #include <chrono>
 #include <limits>
 #include <mutex>
@@ -305,6 +307,130 @@ void BassPreviewAudioBackend::anchorSfxScheduler(double chartSecond)
             .arg(context.inlineSkips));
     // After the anchor row, so the pair reads in the order it happened: the anchor was
     // taken, then arming its first sync failed and the scheduler switched itself off.
+    logSfxSchedulerArmFailure(armFailure);
+}
+
+BassPreviewAudioBackend::SuspendedSfxScheduler
+BassPreviewAudioBackend::suspendSfxSchedulerForTimelineUpdate(const char* reason)
+{
+    SuspendedSfxScheduler suspended;
+    {
+        QMutexLocker locker(&schedulerMutex_);
+        suspended.active = sfxSchedulerActive_ && playbackSession_.masterRunning;
+        suspended.anchor = sfxSchedulerAnchor_;
+        suspended.decodePosition = sfxSchedulerAnchorDecodePosition_;
+    }
+    // RemoveSync must run outside schedulerMutex_. Once it returns, no callback
+    // can read the old event/span vectors while the worker replaces them.
+    disarmSfxScheduler(reason);
+    suspended.touchholdOwner = touchholdOwnerSpanIndex_;
+    if (suspended.touchholdOwner >= 0
+        && suspended.touchholdOwner < preparedTimeline_.touchholdSpans.size()) {
+        const TouchholdSpan& span = preparedTimeline_.touchholdSpans[suspended.touchholdOwner];
+        suspended.touchholdStartSecond = span.startSecond;
+        suspended.touchholdEndSecond = span.endSecond;
+    }
+    return suspended;
+}
+
+void BassPreviewAudioBackend::resumeSfxSchedulerAfterTimelineUpdate(
+    const SuspendedSfxScheduler& suspended)
+{
+    if (!suspended.active || masterMixer_ == 0 || !playbackSession_.masterRunning
+        || shuttingDown_.load(std::memory_order_acquire)) {
+        return;
+    }
+    SfxSchedulerArmFailure armFailure;
+    SfxArmContext context;
+    context.source = miacode::preview_audio::bass::SfxArmSource::Anchor;
+    TouchholdTransition touchholdTransition;
+    double liveSecond = 0.0;
+    int resumeError = 0;
+    enum class ResumeOutcome { Armed, PendingBackground, Failed };
+    for (;;) {
+        const ResumeOutcome outcome = [&] {
+            // Lock BASS before schedulerMutex_, matching the mixer callback's
+            // order. Only the final cursor selection/registration is locked;
+            // rebuilding and BGM seeking remain outside the audio deadline.
+            // Without this atomic window, a near-future POS sync could already
+            // be in the past by the time it is registered, killing the chain.
+            if (!BASS_ChannelLock(masterMixer_, TRUE)) {
+                resumeError = static_cast<int>(BASS_ErrorGetCode());
+                return ResumeOutcome::Failed;
+            }
+            const auto unlockMixer = qScopeGuard([this] {
+                BASS_ChannelLock(masterMixer_, FALSE);
+            });
+            const QWORD position = BASS_ChannelGetPosition(
+                masterMixer_, BASS_POS_BYTE | BASS_POS_DECODE);
+            if (position == static_cast<QWORD>(-1) || position < suspended.decodePosition) {
+                resumeError = static_cast<int>(BASS_ErrorGetCode());
+                return ResumeOutcome::Failed;
+            }
+            const double elapsedSeconds = BASS_ChannelBytes2Seconds(
+                masterMixer_, position - suspended.decodePosition);
+            if (!qIsFinite(elapsedSeconds)) {
+                return ResumeOutcome::Failed;
+            }
+            liveSecond = clampTimelineSecond(
+                miacode::preview_audio::bass::chartSecondForMixerSecond(
+                    suspended.anchor, suspended.anchor.mixerSecond + elapsedSeconds));
+            if (backgroundTrackSample_ != nullptr && playbackSession_.backgroundTrackPendingStart
+                && !playbackSession_.backgroundTrackPastEnd
+                && liveSecond >= playbackSession_.backgroundTrackPendingStartSecond) {
+                return ResumeOutcome::PendingBackground;
+            }
+
+            // Span indices can change in the new table. Preserve an unchanged
+            // voice; resolve starts/stops crossed during the detached interval.
+            const int owner = miacode::preview_sfx_timeline::touchholdOwnerSpanIndexAt(
+                preparedTimeline_.touchholdSpans, liveSecond);
+            const bool sameVoice = owner >= 0 && touchholdOwnerSpanIndex_ >= 0
+                && suspended.touchholdOwner >= 0
+                && preparedTimeline_.touchholdSpans[owner].startSecond == suspended.touchholdStartSecond
+                && preparedTimeline_.touchholdSpans[owner].endSecond == suspended.touchholdEndSecond;
+            if (sameVoice) {
+                touchholdOwnerSpanIndex_ = owner;
+            } else if (owner >= 0 || touchholdOwnerSpanIndex_ >= 0) {
+                pauseTouchholdVoices();
+                reconcileTouchholdVoice(liveSecond, &touchholdTransition);
+            }
+
+            {
+                QMutexLocker locker(&schedulerMutex_);
+                const auto next = std::upper_bound(preparedGroups_.cbegin(), preparedGroups_.cend(),
+                    liveSecond + kBassPreviewEpsilonSeconds,
+                    [](double second, const CollapsedEventGroup& group) { return second < group.second; });
+                playbackSession_.eventGroupIndex = int(next - preparedGroups_.cbegin());
+                sfxSchedulerAnchor_ = suspended.anchor;
+                sfxSchedulerAnchorDecodePosition_ = suspended.decodePosition;
+                sfxSchedulerActive_ = true;
+                armNextGroupSyncLocked(context);
+                armFailure = sfxSchedulerArmFailure_;
+                sfxSchedulerArmFailure_ = SfxSchedulerArmFailure();
+            }
+            return ResumeOutcome::Armed;
+        }();
+        if (outcome == ResumeOutcome::Failed) {
+            noteBassErrCode("sfx_scheduler/resume", resumeError);
+            return;
+        }
+        if (outcome == ResumeOutcome::Armed) {
+            break;
+        }
+        // The BGM start fell inside the detached interval. Catch it up outside
+        // both locks, then re-sample before selecting the next SFX. Running and
+        // past-EOF BGM never enter this path.
+        configureBackgroundTrackForSecond(
+            liveSecond, QStringLiteral("timeline_update_pending_bgm"),
+            miacode::preview_audio::bass::BassDebugRoute::Transport);
+        if (!playbackSession_.backgroundTrackPendingStart && !playbackSession_.backgroundTrackPastEnd) {
+            backgroundTrackSample_->play();
+            playbackSession_.backgroundTrackRunning = true;
+        }
+    }
+    finishArmContext(context);
+    logTouchholdTransition(touchholdTransition);
     logSfxSchedulerArmFailure(armFailure);
 }
 

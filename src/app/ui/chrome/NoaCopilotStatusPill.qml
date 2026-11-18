@@ -365,6 +365,41 @@ Item {
                     }
 
                     LabeledSlider {
+                        label: "Slide 偏置"
+                        labelWidth: 68
+                        from: 0
+                        to: 4
+                        stepSize: 0.1
+                        decimals: 1
+                        suffix: ""
+                        value: root.noaCopilot ? root.noaCopilot.slideBias : 0
+                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideBias = v }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.preferredWidth: 68
+                            text: "随机种子"
+                            color: Theme.colors.text.secondary
+                        }
+                        AppTextField {
+                            Layout.fillWidth: true
+                            validator: IntValidator { bottom: -1; top: 2147483647 }
+                            text: root.noaCopilot ? String(root.noaCopilot.seed) : "-1"
+                            onEditingFinished: {
+                                if (acceptableInput && root.noaCopilot)
+                                    root.noaCopilot.seed = Number(text)
+                                text = Qt.binding(() => root.noaCopilot ? String(root.noaCopilot.seed) : "-1")
+                            }
+                        }
+                        Text {
+                            text: "-1 随机"
+                            color: Theme.colors.text.secondary
+                        }
+                    }
+
+                    LabeledSlider {
                         label: "采样温度"
                         labelWidth: 68
                         from: 0.0

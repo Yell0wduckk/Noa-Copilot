@@ -78,6 +78,13 @@ NoaCopilotModel::NoaCopilotModel(
     , timeline_(timeline)
     , uiRequests_(uiRequests)
 {
+    streamFlushTimer_.setSingleShot(true);
+    streamFlushTimer_.setTimerType(Qt::PreciseTimer);
+    connect(&streamFlushTimer_, &QTimer::timeout, this, [this] {
+        const QString text = pendingStreamChart_;
+        pendingStreamChart_.clear();
+        if (fullStreamingActive_ && !text.isEmpty()) publishFullChart(text);
+    });
     debounceTimer_.setSingleShot(true);
     connect(&debounceTimer_, &QTimer::timeout, this, [this]() {
         if (!enabled_ || !autoContinue_ || !hasCheckpoint() || busy() || inlineCardVisible_ || pendingRangeActive_) {
@@ -225,7 +232,7 @@ QVariantList NoaCopilotModel::envModeOptions() const
 QVariantList NoaCopilotModel::sourceModeOptions() const
 {
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Flat320 v18.4)")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Flat320 v18.5 / v18.4)")}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("custom")}, {QStringLiteral("label"), QStringLiteral("自定义 Worktree / 推理源码目录")}},
     };
 }
@@ -929,6 +936,7 @@ void NoaCopilotModel::ensureDaemonRunning()
         qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
         this,
         [this](int exitCode, QProcess::ExitStatus) {
+            endFullStream();
             daemonConfigured_ = false;
             checkpointLoadedInDaemon_ = false;
             activeRequestId_ = 0;
@@ -961,6 +969,7 @@ void NoaCopilotModel::ensureDaemonRunning()
 
 void NoaCopilotModel::stopDaemon()
 {
+    endFullStream();
     stdoutBuffer_.clear();
     debounceTimer_.stop();
     idleVramTimer_.stop();
@@ -1103,7 +1112,7 @@ void NoaCopilotModel::sendSuggestRequest(
         streamingProgress_ = 0.0;
         streamingBeat_ = 0;
         streamingTotalBeats_ = 0;
-        fullStreamingInitialText_ = document_.chartText();
+        lastStreamFlush_.start();
         emit streamingProgressChanged();
         emit emptyCardChanged();
         updateStatus(QStringLiteral("generating"), QStringLiteral("正在流式生成整曲..."));
@@ -1253,11 +1262,17 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
             QStringLiteral("generating"),
             QStringLiteral("整曲生成 (%1/%2 拍)").arg(streamingBeat_).arg(streamingTotalBeats_));
 
-        const QString ghostSimai = message.value(QStringLiteral("ghost_simai")).toString();
-        const double startSec = message.value(QStringLiteral("start_second")).toDouble(currentChartFirstSeconds());
-        const double activeBpm = message.value(QStringLiteral("active_bpm")).toDouble(currentChartBpm());
-        if (!ghostSimai.isEmpty()) {
-            applyDualSurfaceGhostPreview(ghostSimai, startSec, activeBpm);
+        const QString chart = message.value(QStringLiteral("chart_text")).toString();
+        if (fullStreamingActive_ && !chart.isEmpty()) {
+            pendingStreamChart_ = chart;
+            if (!streamFlushTimer_.isActive())
+                streamFlushTimer_.start(int(qMax<qint64>(0, 2000 - lastStreamFlush_.elapsed())));
+        } else if (const QString ghost = message.value(QStringLiteral("ghost_simai")).toString();
+                   fullStreamingActive_ && !ghost.isEmpty() && lastStreamFlush_.elapsed() >= 2000) {
+            // Older custom daemons only publish a short ghost.
+            lastStreamFlush_.restart();
+            applyDualSurfaceGhostPreview(ghost, message.value(QStringLiteral("start_second")).toDouble(currentChartFirstSeconds()),
+                                         message.value(QStringLiteral("active_bpm")).toDouble(currentChartBpm()));
         }
         return;
     }
@@ -1267,16 +1282,14 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         if (id != activeRequestId_) {
             return;
         }
-        activeRequestId_ = 0;
+        streamFlushTimer_.stop();
+        pendingStreamChart_.clear();
         const bool ok = message.value(QStringLiteral("ok")).toBool();
         const QString mode = message.value(QStringLiteral("mode")).toString();
         const QString err = message.value(QStringLiteral("error")).toString();
         if (!ok) {
-            if (fullStreamingActive_) {
-                fullStreamingActive_ = false;
-                emit streamingProgressChanged();
-                emit emptyCardChanged();
-            }
+            activeRequestId_ = 0;
+            endFullStream();
             updateStatus(QStringLiteral("error"), QStringLiteral("生成失败"), err);
             return;
         }
@@ -1285,10 +1298,8 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         refreshAudioCacheSize();
 
         if (activeRequestRevision_ != document_.documentRevision()) {
-            fullStreamingActive_ = false;
-            clearDualSurfaceGhostPreview();
-            emit streamingProgressChanged();
-            emit emptyCardChanged();
+            activeRequestId_ = 0;
+            endFullStream();
             return;
         }
         const QString text = message.value(QStringLiteral("text")).toString();
@@ -1301,16 +1312,13 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         const int noteCount = message.value(QStringLiteral("note_count")).toInt();
 
         if (mode == QStringLiteral("full")) {
-            fullStreamingActive_ = false;
-            streamingProgress_ = 1.0;
-            emit streamingProgressChanged();
-            clearDualSurfaceGhostPreview();
-            const QString curText = document_.chartText();
-            applyEditorReplacement(0, curText.size(), text);
-            emit emptyCardChanged();
+            if (publishFullChart(text)) streamingProgress_ = 1.0;
+            activeRequestId_ = 0;
+            endFullStream();
             return;
         }
 
+        activeRequestId_ = 0;
         if (mode == QStringLiteral("range")) {
             if (text.trimmed().isEmpty()) {
                 return;
@@ -1354,17 +1362,41 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         const int id = message.value(QStringLiteral("id")).toInt();
         if (id == activeRequestId_ || id <= 0) {
             activeRequestId_ = 0;
-            if (fullStreamingActive_) {
-                fullStreamingActive_ = false;
-                emit streamingProgressChanged();
-                emit emptyCardChanged();
-            }
+            endFullStream();
             if (checkpointLoadedInDaemon_) {
                 updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
             }
         }
         return;
     }
+}
+
+bool NoaCopilotModel::publishFullChart(const QString& text)
+{
+    if (activeRequestRevision_ != document_.documentRevision()) {
+        cancelActiveGeneration();
+        return false;
+    }
+    lastStreamFlush_.restart();
+    if (text == document_.chartText() && !document_.dirty()) return true;
+    if (!document_.applyGeneratedChart(text)) {
+        cancelActiveGeneration();
+        updateStatus(QStringLiteral("error"), QStringLiteral("无法保存生成中的谱面"));
+        return false;
+    }
+    activeRequestRevision_ = document_.documentRevision();
+    return true;
+}
+
+void NoaCopilotModel::endFullStream()
+{
+    streamFlushTimer_.stop();
+    pendingStreamChart_.clear();
+    if (!fullStreamingActive_) return;
+    fullStreamingActive_ = false;
+    clearDualSurfaceGhostPreview();
+    emit streamingProgressChanged();
+    emit emptyCardChanged();
 }
 
 void NoaCopilotModel::updateGhostSplitLines()
@@ -1479,7 +1511,7 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
     if (ghostActive_) {
         dismissGhost();
     }
-    if (textChanged) {
+    if (textChanged && !fullStreamingActive_) {
         if (pendingRangeActive_) rejectPendingRange();
         sendSyncChartIfNeeded();
         if (enabled_ && autoContinue_ && hasCheckpoint() && !inlineCardVisible_ && !pendingRangeActive_) {
@@ -1786,12 +1818,7 @@ void NoaCopilotModel::cancelActiveGeneration()
     req.insert(QStringLiteral("id"), activeRequestId_);
     writeDaemonJson(req);
     activeRequestId_ = 0;
-    if (fullStreamingActive_) {
-        fullStreamingActive_ = false;
-        emit streamingProgressChanged();
-        clearDualSurfaceGhostPreview();
-        emit emptyCardChanged();
-    }
+    endFullStream();
     if (checkpointLoadedInDaemon_) {
         updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
     }

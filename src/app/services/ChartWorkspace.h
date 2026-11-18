@@ -87,7 +87,7 @@ public:
         int preferredDifficultyId = 0, ChartDocumentOrigin origin = ChartDocumentOrigin::Local);
     bool isNetPreview() const { return origin_ == ChartDocumentOrigin::NetPreview; }
     ChartWorkspaceResult replaceSource(const QString& source);
-    ChartWorkspaceResult replaceActiveDifficultyChart(const QString& chartText);
+    ChartWorkspaceResult replaceActiveDifficultyChart(const QString& chartText, bool generated = false);
     bool updateDocumentField(ChartWorkspaceDocumentField field, const QString& value);
     ChartWorkspaceResult replaceExtraFields(const QString& value);
     // Metadata-form replacement: parse unmanaged fields and carry the dedicated
@@ -124,12 +124,13 @@ public:
     // 0 表示全文档；MetadataSection 表示全局字段、等级、谱师与难度删除；正数表示难度正文。
     QString textForSectionSave(int difficultyId) const;
     SimaiDocument documentForSectionSave(int difficultyId) const;
+    bool latestChangeIsGeneratedChart() const { return generatedRevision_ != 0 && generatedRevision_ == revision_; }
     // Advance the save point for that section only. Callers write
     // textForSectionSave() first; this records that it landed.
     bool markSectionSaved(int difficultyId, const QString& filePath = QString());
     // Record the exact document written by the file service, including relocated media.
     bool markSectionSaved(const SimaiDocument& savedDocument, const QString& filePath,
-                          const QString& currentVideoPath);
+                          const QString& currentVideoPath, int generatedDifficulty = 0);
     // 关闭文档: no document at all, rather than an empty one. A chart with no
     // difficulties is still a chart; this is the state before any chart.
     ChartWorkspaceResult closeDocument();
@@ -163,6 +164,7 @@ private:
     QString filePath_;
     int activeDifficultyId_ = 0;
     quint64 revision_ = 0;
+    quint64 generatedRevision_ = 0;
     bool hasDocument_ = false;
     bool dirty_ = false;
     bool unifiedDesignerEnabled_ = false;

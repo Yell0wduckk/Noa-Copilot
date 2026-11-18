@@ -199,6 +199,16 @@ private:
     // could not be identified from a capture.
     void disarmSfxScheduler(const char* reason);
     void anchorSfxScheduler(double chartSecond);
+    struct SuspendedSfxScheduler {
+        bool active = false;
+        miacode::preview_audio::bass::SfxSchedulerAnchor anchor;
+        quint64 decodePosition = 0;
+        int touchholdOwner = -1;
+        double touchholdStartSecond = -1.0;
+        double touchholdEndSecond = -1.0;
+    };
+    SuspendedSfxScheduler suspendSfxSchedulerForTimelineUpdate(const char* reason);
+    void resumeSfxSchedulerAfterTimelineUpdate(const SuspendedSfxScheduler& suspended);
     double currentSfxSchedulerChartSecond(double fallbackSecond) const;
     // Chart second for a master decode position under the current anchor; only meaningful
     // while sfxSchedulerActive_. Must be called with schedulerMutex_ held.

@@ -73,9 +73,13 @@ void ScintillaDocumentAdapter::activate(const QString& scope, const QString& tex
         saveViewport();
         // External DSL transforms and source replacements join native history.
         editor_.send(SCI_BEGINUNDOACTION);
-        editor_.send(SCI_SETTARGETSTART, 0);
+        int prefix = 0;
+        const int limit = qMin(text_.size(), text.size());
+        while (prefix < limit && text_.at(prefix) == text.at(prefix)) ++prefix;
+        if (prefix > 0 && text_.at(prefix - 1).isHighSurrogate()) --prefix;
+        editor_.send(SCI_SETTARGETSTART, bytePosition(prefix));
         editor_.send(SCI_SETTARGETEND, editor_.send(SCI_GETLENGTH));
-        const QByteArray replacement = text.toUtf8();
+        const QByteArray replacement = QStringView(text).sliced(prefix).toUtf8();
         editor_.sends(SCI_REPLACETARGET, replacement.size(), replacement.constData());
         editor_.send(SCI_ENDUNDOACTION);
         viewportPending_ = true;

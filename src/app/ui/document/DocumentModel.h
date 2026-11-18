@@ -97,6 +97,7 @@ public:
 
     QString chartText() const;
     void setChartText(const QString& value);
+    bool applyGeneratedChart(const QString& text);
     void setEditorBookmarks(int difficultyId, const QVariantList& bookmarks);
     QString metadataTitle() const;
     QString metadataArtist() const;

@@ -894,6 +894,17 @@ void miacode::runtime::PlaybackCoordinator::dispatchTimelineSlowRefresh()
     if (!state_.playing_) {
         applyLatestTimelinePreviewStateToPausedPreview();
     }
+    if (state_.playing_ && services_.workspace().latestChangeIsGeneratedChart()
+        && previewState.noteMarkerSignature != state_.lastPreviewNoteMarkerSignature_) {
+        const auto& markers = state_.timeline_.latestTimelineNoteMarkers_;
+        if (state_.previewSfxRuntime_ != nullptr) {
+            state_.previewSfxRuntime_->configureTimeline(
+                markers, state_.previewPlaybackRate_, state_.previewTimingSettings_);
+        }
+        if (state_.scene_ != nullptr) state_.scene_->setNoteMarkers(markers);
+        refreshPreviewObjectStatsTotals(markers);
+        state_.lastPreviewNoteMarkerSignature_ = previewState.noteMarkerSignature;
+    }
     if (state_.pendingDifficultySwitchPreviewRestore_
         && state_.pendingDifficultySwitchPreviewRestoreDifficultyId_ == request.difficultyId) {
         const double restoreSecond = qBound(

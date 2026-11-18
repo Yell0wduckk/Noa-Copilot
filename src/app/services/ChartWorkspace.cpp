@@ -158,7 +158,7 @@ ChartWorkspaceResult ChartWorkspace::replaceSource(const QString& source)
     return commit();
 }
 
-ChartWorkspaceResult ChartWorkspace::replaceActiveDifficultyChart(const QString& chartText)
+ChartWorkspaceResult ChartWorkspace::replaceActiveDifficultyChart(const QString& chartText, bool generated)
 {
     if (!hasDocument_) return reject();
     SimaiDifficultyData* difficulty = document_.difficulty(activeDifficultyId_);
@@ -169,6 +169,7 @@ ChartWorkspaceResult ChartWorkspace::replaceActiveDifficultyChart(const QString&
     // the user is typing. Strict validation belongs to the complete-source
     // replacement transaction above, not this incremental text transaction.
     difficulty->chart = chartText;
+    if (generated) generatedRevision_ = revision_ + 1;
     refreshSourceAndDirty();
     return commit();
 }
@@ -519,13 +520,17 @@ bool ChartWorkspace::markSectionSaved(int difficultyId, const QString& filePath)
 }
 
 bool ChartWorkspace::markSectionSaved(const SimaiDocument& savedDocument, const QString& filePath,
-                                     const QString& currentVideoPath)
+                                     const QString& currentVideoPath, int generatedDifficulty)
 {
     if (!hasDocument_) return false;
     const QString nextFilePath = filePath.isEmpty() ? filePath_ : filePath;
     const QString savedText = savedDocument.toText();
     savedDocument_ = savedDocument;
-    if (document_.videoPath != currentVideoPath) {
+    if (generatedDifficulty > 0) {
+        document_.ensureDifficulty(generatedDifficulty).chart = savedDocument.difficulty(generatedDifficulty)->chart;
+        generatedRevision_ = revision_ + 1;
+    }
+    if (generatedDifficulty > 0 || document_.videoPath != currentVideoPath) {
         document_.videoPath = currentVideoPath;
         sourceText_ = document_.toText();
     }
