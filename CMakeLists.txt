@@ -35,6 +35,21 @@ endif()
 
 project(MiaCode VERSION ${MIACODE_VERSION} LANGUAGES C CXX)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND CMAKE_GENERATOR MATCHES "Ninja"
+        AND CMAKE_CL_SHOWINCLUDES_PREFIX MATCHES "[^ -~]")
+    # Ninja matches cl's output byte-for-byte. CMake can decode UTF-8 output
+    # using the Windows console code page when detecting a localized prefix.
+    set(probe_dir "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/MiaCodeShowIncludes")
+    file(MAKE_DIRECTORY "${probe_dir}")
+    file(WRITE "${probe_dir}/marker.h" "\n")
+    file(WRITE "${probe_dir}/probe.cpp" "#include \"marker.h\"\n")
+    execute_process(COMMAND "${CMAKE_CXX_COMPILER}" /nologo /showIncludes /Zs probe.cpp
+        WORKING_DIRECTORY "${probe_dir}" OUTPUT_VARIABLE include_trace ENCODING NONE)
+    if(include_trace MATCHES "(^|\n)([^\r\n]+: +)[A-Za-z]:[/\\\\][^\r\n]*marker[.]h")
+        set(CMAKE_CL_SHOWINCLUDES_PREFIX "${CMAKE_MATCH_2}")
+    endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
