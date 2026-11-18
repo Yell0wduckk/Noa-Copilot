@@ -1396,9 +1396,7 @@ QSGNode* TimelineQuickItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeDat
     QElapsedTimer paintNodeTimer;
     paintNodeTimer.start();
     if (!canBecomeReady()) {
-        auto* root = ensureSlotRoot(oldNode);
-        updateReadyState(false);
-        return root;
+        return ensureSlotRoot(oldNode);
     }
 
     const QString targetSkinDirectory = stateBridge_ != nullptr ? stateBridge_->skinDirectory() : QString();
@@ -1580,7 +1578,14 @@ QSGNode* TimelineQuickItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeDat
     updateLayerSlot(layerSlotAt(root, slotIndex++), [&](QSGNode* oldChild) {
         return overlayLayer_->updateNode(oldChild, state, window(), textures_.get());
     });
-    updateReadyState(true);
+    if (!ready_) {
+        // QML handles timelineSurfaceReady on the GUI thread after scene graph sync.
+        QMetaObject::invokeMethod(this, [this, renderedWindow = window(), renderedBridge = stateBridge_] {
+            if (window() == renderedWindow && stateBridge_ == renderedBridge && canBecomeReady()) {
+                updateReadyState(true);
+            }
+        }, Qt::QueuedConnection);
+    }
 
     const qint64 elapsedNs = paintNodeTimer.nsecsElapsed();
     ++updatePaintNodeCount_;
@@ -1682,6 +1687,9 @@ void TimelineQuickItem::geometryChange(const QRectF& newGeometry, const QRectF& 
 {
     QQuickItem::geometryChange(newGeometry, oldGeometry);
     if (newGeometry.size() != oldGeometry.size()) {
+        if (!canBecomeReady()) {
+            updateReadyState(false);
+        }
         pendingViewportSize_ = miacode::pixel_geometry::coveringSize(newGeometry.size());
         viewportUpdatePending_ = true;
         polish();
@@ -1705,6 +1713,7 @@ void TimelineQuickItem::itemChange(ItemChange change, const ItemChangeData& valu
 {
     if (change == ItemSceneChange) {
         bindRenderCadence(value.window);
+        updateReadyState(false);
     }
     QQuickItem::itemChange(change, value);
 }
