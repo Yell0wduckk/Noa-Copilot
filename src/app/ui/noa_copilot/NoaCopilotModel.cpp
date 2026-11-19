@@ -231,8 +231,18 @@ QVariantList NoaCopilotModel::envModeOptions() const
 
 QVariantList NoaCopilotModel::sourceModeOptions() const
 {
+    QString bundledLabel = QStringLiteral("MiaCode 内置 Flat320 推理源码");
+    QFile runtimeManifest(QDir(defaultBuiltinRoot()).filePath(QStringLiteral("runtime.json")));
+    if (runtimeManifest.open(QIODevice::ReadOnly)) {
+        const QString architecture = QJsonDocument::fromJson(runtimeManifest.readAll())
+                                         .object().value(QStringLiteral("architecture")).toString();
+        const qsizetype version = architecture.lastIndexOf(QStringLiteral(".v"));
+        if (version >= 0) {
+            bundledLabel += QStringLiteral(" (%1)").arg(architecture.mid(version + 1));
+        }
+    }
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("MiaCode 内置推理源码 (Flat320 v18.5 / v18.4)")}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), bundledLabel}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("custom")}, {QStringLiteral("label"), QStringLiteral("自定义 Worktree / 推理源码目录")}},
     };
 }
