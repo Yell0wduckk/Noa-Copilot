@@ -7,6 +7,7 @@
 #include "core/video/PreviewRenderSettings.h"
 
 #include <QObject>
+#include <QFuture>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -105,7 +106,8 @@ public:
         Q_UNUSED(strikeEndLine);
         Q_UNUSED(strikeEndCol);
     }
-    virtual int localGhostIssues(const QVector<TimelineNoteMarker>&, double, double) { return 0; }
+    virtual QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>&, double, double)
+    { return QtFuture::makeReadyValueFuture(0); }
     virtual void setCopilotReview(bool) {}
     virtual void clearGhostPreviewOverlay() {}
 

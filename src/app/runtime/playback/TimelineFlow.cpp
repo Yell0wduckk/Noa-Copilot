@@ -1,3 +1,4 @@
+#include <QtConcurrent/QtConcurrentRun>
 #include "app/runtime/playback/PlaybackCoordinator.h"
 #include "app/runtime/Shared.h"
 #include "app/runtime/media/MediaJobsHost.h"
@@ -904,7 +905,10 @@ void miacode::runtime::PlaybackCoordinator::pushEffectivePreviewAndSfxState(bool
         state_.scene_->setNoteMarkers(normalMarkers);
         state_.scene_->setGhostNoteMarkers(ghostPreviewMarkers_);
     }
-    if (transientOverlay_ && !state_.playing_) return;
+    if (transientOverlay_ && !state_.playing_) {
+        overlaySfxPending_ = true;
+        return;
+    }
     const auto sfxMarkers = effectiveSfxNoteMarkers();
     refreshPreviewObjectStatsTotals(normalMarkers);
     if (state_.previewSfxRuntime_ != nullptr) {
@@ -916,11 +920,12 @@ void miacode::runtime::PlaybackCoordinator::pushEffectivePreviewAndSfxState(bool
         } else {
             state_.previewSfxRuntime_->applyPausedPreviewState(
                 sfxMarkers,
-                forceUpdate,
+                forceUpdate || overlaySfxPending_,
                 state_.pauseSecond_,
                 state_.previewPlaybackRate_,
                 state_.previewTimingSettings_);
         }
+        overlaySfxPending_ = false;
     }
 }
 
@@ -959,35 +964,39 @@ void miacode::runtime::PlaybackCoordinator::setCopilotReview(bool active)
     }
 }
 
-int miacode::runtime::PlaybackCoordinator::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+QFuture<int> miacode::runtime::PlaybackCoordinator::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
 {
-    if (markers.isEmpty()) return 0;
+    if (markers.isEmpty()) return QtFuture::makeReadyValueFuture(0);
+    const double threshold = state_.staticTapOnSlideThresholdMs_ / 1000.0;
+    const double earliestEnd = start - qMax(0.150, threshold);
     const auto& source = state_.timeline_.latestTimelineNoteMarkers_;
     if (!prefixIndexSource_.isSharedWith(source) || prefixEndSeconds_.size()!=source.size()) {
         prefixIndexSource_ = source;
         prefixEndSeconds_.clear(); prefixEndSeconds_.reserve(source.size());
         double latest = -std::numeric_limits<double>::infinity();
         for (const auto& n : source) {
-            latest = qMax(latest,qMax(n.second,n.endSecond)+0.150);
+            latest = qMax(latest,qMax(n.second,n.endSecond));
             prefixEndSeconds_.append(latest);
         }
     }
-    const auto first = std::lower_bound(prefixEndSeconds_.cbegin(),prefixEndSeconds_.cend(),start);
+    const auto first = std::lower_bound(prefixEndSeconds_.cbegin(),prefixEndSeconds_.cend(),earliestEnd);
     QVector<TimelineNoteMarker> local;
     for (qsizetype i=first-prefixEndSeconds_.cbegin(); i<source.size() && source[i].second<start; ++i) {
         const auto& note = source[i];
-        if (!note.skeleton && qMax(note.second,note.endSecond)+0.150>=start) local.append(note);
+        if (!note.skeleton && qMax(note.second,note.endSecond) >= earliestEnd) local.append(note);
     }
     local += markers;
-    const auto report = MuriAnalyzer::analyze(local,state_.muriRenderOptions_);
-    return int(std::count_if(report.diagnostics.cbegin(),report.diagnostics.cend(),[=](const auto& d){
-        return d.second >= start && d.second <= end;
-    }));
+    return QtConcurrent::run([local = std::move(local), options = state_.muriRenderOptions_, threshold, start, end] {
+        const auto report = MuriAnalyzer::analyze(local, options, threshold);
+        return int(std::count_if(report.diagnostics.cbegin(), report.diagnostics.cend(), [=](const auto& d) {
+            return d.second >= start && d.second <= end;
+        }));
+    });
 }
 
 void miacode::runtime::PlaybackCoordinator::clearGhostPreviewOverlay()
 {
-    if (ghostPreviewMarkers_.isEmpty() && !ghostStrikeActive_) {
+    if (ghostPreviewMarkers_.isEmpty() && !ghostStrikeActive_ && !overlaySfxPending_) {
         return;
     }
     transientOverlay_ = false;
@@ -1011,10 +1020,11 @@ void miacode::runtime::PlaybackCoordinator::applyLatestTimelinePreviewStateToPau
     if (state_.previewSfxRuntime_ != nullptr) {
         state_.previewSfxRuntime_->applyPausedPreviewState(
             sfxMarkers,
-            noteMarkersChanged,
+            noteMarkersChanged || overlaySfxPending_,
             state_.pauseSecond_,
             state_.previewPlaybackRate_,
             state_.previewTimingSettings_);
+        overlaySfxPending_ = false;
     }
 
     refreshPreviewObjectStatsTotals(normalMarkers);
@@ -1086,7 +1096,10 @@ void miacode::runtime::PlaybackCoordinator::dispatchTimelineSlowRefresh()
             state_.previewSfxRuntime_->configureTimeline(
                 sfxMarkers, state_.previewPlaybackRate_, state_.previewTimingSettings_);
         }
-        if (state_.scene_ != nullptr) state_.scene_->setNoteMarkers(normalMarkers);
+        if (state_.scene_ != nullptr) {
+            state_.scene_->setNoteMarkers(normalMarkers);
+            state_.scene_->setGhostNoteMarkers(ghostPreviewMarkers_);
+        }
         refreshPreviewObjectStatsTotals(normalMarkers);
         state_.lastPreviewNoteMarkerSignature_ = previewState.noteMarkerSignature;
     }

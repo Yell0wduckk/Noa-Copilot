@@ -83,6 +83,14 @@ bool testEditor(QTextStream& out, const QString& capturePath)
     if (editor.send(SCI_GETSTYLEAT, syntaxSample.indexOf('[')) != 2
         || editor.send(SCI_GETSTYLEAT, syntaxSample.indexOf('H')) != 6
         || editor.send(SCI_GETSTYLEAT, syntaxSample.lastIndexOf('b')) != 3) return false;
+    const QByteArray placeholders("x\n\t*  \r\nx**\t|| end\nxn,xr,tx,1x,x|bad,2-6[4:1]*-8[4:1],x");
+    document.activate(QStringLiteral("difficulty:5"), QString::fromUtf8(placeholders));
+    styler.reset();
+    styler.style();
+    for (int i = 0; i < placeholders.size(); ++i) {
+        const bool skeleton = i == 0 || i == 3 || (i >= 8 && i <= 10) || i == placeholders.size() - 1;
+        if ((editor.send(SCI_GETSTYLEAT, i) == 7) != skeleton) return false;
+    }
     document.activate(QStringLiteral("difficulty:5"), initial);
     styler.reset();
     styler.style();

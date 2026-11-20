@@ -263,9 +263,9 @@ void PlaybackPreviewSurfaceAdapter::setGhostPreviewOverlay(
     }
 }
 
-int PlaybackPreviewSurfaceAdapter::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+QFuture<int> PlaybackPreviewSurfaceAdapter::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
 {
-    return coordinator_ ? coordinator_->localGhostIssues(markers,start,end) : 0;
+    return coordinator_ ? coordinator_->localGhostIssues(markers,start,end) : QtFuture::makeReadyValueFuture(0);
 }
 
 void PlaybackPreviewSurfaceAdapter::setCopilotReview(bool active)

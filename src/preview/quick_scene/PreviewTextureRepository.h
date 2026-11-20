@@ -74,6 +74,7 @@ class PreviewTextureRepository
 {
 public:
     ~PreviewTextureRepository();
+    bool grayscale() const { return grayscale_; }
     void setGrayscale(bool enabled) { grayscale_ = enabled; }
 
     void setWindow(QQuickWindow* window);

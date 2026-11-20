@@ -1,3 +1,4 @@
+#include "common/GrayscaleImage.h"
 #include "timeline/quick/TimelineQuickTextureCache.h"
 
 #include <QDir>
@@ -119,7 +120,7 @@ void TimelineQuickTextureCache::setSkinDirectory(const QString& skinDirectory)
     noteAssets_ = miacode::timeline::loadTimelineNoteAssets(skinDirectory_);
 }
 
-QSGTexture* TimelineQuickTextureCache::textureForKey(const QString& key, const QImage& image)
+QSGTexture* TimelineQuickTextureCache::textureForKey(const QString& key, const QImage& image, bool grayscale)
 {
     if (window_ == nullptr || image.isNull() || key.isEmpty()) {
         return nullptr;
@@ -128,7 +129,7 @@ QSGTexture* TimelineQuickTextureCache::textureForKey(const QString& key, const Q
     if (it != textures_.end()) {
         return it.value();
     }
-    QSGTexture* texture = window_->createTextureFromImage(image);
+    QSGTexture* texture = window_->createTextureFromImage(grayscale ? miacode::grayscaleImage(image) : image);
     ++textureCreateCount_;
     textures_.insert(key, texture);
     const qint64 uploadBytes = qMax<qint64>(1, image.sizeInBytes());
@@ -171,9 +172,9 @@ void TimelineQuickTextureCache::debugCacheStats(
     }
 }
 
-QSGTexture* TimelineQuickTextureCache::textureForPixmapKey(const QString& key, const QPixmap& pixmap)
+QSGTexture* TimelineQuickTextureCache::textureForPixmapKey(const QString& key, const QPixmap& pixmap, bool grayscale)
 {
-    return pixmap.isNull() ? nullptr : textureForKey(key, pixmap.toImage());
+    return pixmap.isNull() ? nullptr : textureForKey(key, pixmap.toImage(), grayscale);
 }
 
 QString TimelineQuickTextureCache::noteTextureKey(
@@ -226,9 +227,10 @@ QSGTexture* TimelineQuickTextureCache::noteTexture(
     const QString& spriteType,
     const QSize& targetSize,
     qreal rotationDegrees,
-    bool mirrorX)
+    bool mirrorX, bool grayscale)
 {
-    const QString key = noteTextureKey(spriteType, targetSize, rotationDegrees, mirrorX);
+    QString key = noteTextureKey(spriteType, targetSize, rotationDegrees, mirrorX);
+    if (grayscale) key += QStringLiteral("|ghost");
     if (auto it = textures_.constFind(key); it != textures_.constEnd()) {
         return it.value();
     }
@@ -245,7 +247,7 @@ QSGTexture* TimelineQuickTextureCache::noteTexture(
         return nullptr;
     }
     pixmap.setDevicePixelRatio(dpr);
-    return textureForPixmapKey(key, pixmap);
+    return textureForPixmapKey(key, pixmap, grayscale);
 }
 
 QSize TimelineQuickTextureCache::noteTargetSize(const QString& spriteType, qreal scale) const
@@ -260,9 +262,10 @@ qreal TimelineQuickTextureCache::holdScaleForBaseIconScale(const QString& sprite
 
 TimelineQuickHoldTextureParts TimelineQuickTextureCache::holdTextureParts(
     const QString& spriteType,
-    qreal scale)
+    qreal scale, bool grayscale)
 {
-    const QString key = holdPartsCacheKey(spriteType, scale);
+    QString key = holdPartsCacheKey(spriteType, scale);
+    if (grayscale) key += QStringLiteral("|ghost");
     auto it = holdTextureParts_.constFind(key);
     if (it != holdTextureParts_.constEnd()) {
         return it.value();
@@ -279,9 +282,9 @@ TimelineQuickHoldTextureParts TimelineQuickTextureCache::holdTextureParts(
             : QSizeF(static_cast<qreal>(size.width()) / dpr, static_cast<qreal>(size.height()) / dpr);
     };
     const TimelineQuickHoldTextureParts textures{
-        {textureForPixmapKey(QStringLiteral("hold_left_cap|%1").arg(key), parts.leftCap), logicalSize(parts.leftCap.size())},
-        {textureForPixmapKey(QStringLiteral("hold_right_cap|%1").arg(key), parts.rightCap), logicalSize(parts.rightCap.size())},
-        {textureForKey(QStringLiteral("hold_body|%1").arg(key), parts.bodySlice), logicalSize(parts.bodySlice.size())},
+        {textureForPixmapKey(QStringLiteral("hold_left_cap|%1").arg(key), parts.leftCap, grayscale), logicalSize(parts.leftCap.size())},
+        {textureForPixmapKey(QStringLiteral("hold_right_cap|%1").arg(key), parts.rightCap, grayscale), logicalSize(parts.rightCap.size())},
+        {textureForKey(QStringLiteral("hold_body|%1").arg(key), parts.bodySlice, grayscale), logicalSize(parts.bodySlice.size())},
     };
     holdTextureParts_.insert(key, textures);
     return textures;

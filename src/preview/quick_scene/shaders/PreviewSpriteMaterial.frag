@@ -5,6 +5,7 @@ layout(location = 1) in float vOpacity;
 layout(location = 2) in float vWave;
 layout(location = 3) in float vAbsWave;
 layout(location = 4) in float vEffect;
+layout(location = 5) flat in float vGrayscale;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -44,6 +45,8 @@ void main()
     }
 
     vec3 color = texel.rgb / texel.a;
+
+    if (vGrayscale > 0.5) color = vec3(dot(color, vec3(11.0, 16.0, 5.0) / 32.0));
 
     if (vEffect > 1.5) {
         float brightness = 0.95 + max(vWave * 0.65, 0.0);

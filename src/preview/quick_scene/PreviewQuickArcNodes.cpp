@@ -137,7 +137,7 @@ QSGNode* buildPreviewArcNodeTree(
             continue;
         }
 
-        QSGTexture* texture = textures->textureForImage(*arc.image, arc.cacheable);
+        QSGTexture* texture = textures->textureForImage(*arc.image, arc.cacheable || textures->grayscale());
         if (texture == nullptr) {
             continue;
         }

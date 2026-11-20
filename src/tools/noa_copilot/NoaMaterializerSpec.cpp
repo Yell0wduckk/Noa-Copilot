@@ -69,6 +69,13 @@ bool replay(const QJsonObject& fixture)
 int main(int argc,char** argv)
 {
     QCoreApplication app(argc,argv);
+    using miacode::ui::noaWarmTimingText;
+    const QString withNotes = "(150){8}1,2,|| (90),\n{#0.12}3,(180)4,{6}5-2[4:1],";
+    const QString edited = "(150){8}2-4[4:1]/8,x,|| (110),,\n{#0.12}7,(180)*,{16}8,";
+    if (noaWarmTimingText(withNotes) != noaWarmTimingText(edited)
+        || noaWarmTimingText(edited) != QStringLiteral("(150){8},,{#0.12},(180),")
+        || noaWarmTimingText(QStringLiteral("(150)1,,(180)x,")) == noaWarmTimingText(QStringLiteral("(150)1,(180)x,"))
+        || !noaWarmTimingText(QStringLiteral("1,2,|| (100)\nE")).isEmpty()) return 1;
     const QString start="(120){4}1h[1:1],x,*,4,\n";
     const QString suffix="{8}2-5[4:1],3,4,5,\n(180){4}6,x**,8,\nE";
     std::shared_ptr<SimaiLineCache> cache;

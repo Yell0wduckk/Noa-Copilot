@@ -7,6 +7,8 @@
 
 namespace miacode::ui {
 
+QString noaWarmTimingText(QStringView chart);
+
 class NoaMaterializer {
 public:
     void begin(const QJsonObject& descriptor, const QString& original, int lineBeats);

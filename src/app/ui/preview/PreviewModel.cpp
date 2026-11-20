@@ -433,9 +433,9 @@ void PreviewModel::setGhostPreviewOverlay(
     }
 }
 
-int PreviewModel::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+QFuture<int> PreviewModel::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
 {
-    return surface() ? surface()->localGhostIssues(markers,start,end) : 0;
+    return surface() ? surface()->localGhostIssues(markers,start,end) : QtFuture::makeReadyValueFuture(0);
 }
 
 void PreviewModel::setCopilotReview(bool active)

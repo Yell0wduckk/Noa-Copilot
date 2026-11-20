@@ -1,4 +1,5 @@
 #include "app/ui/editor/ScintillaDslStyler.h"
+#include <algorithm>
 #include <QColor>
 #include "editor/BookmarkCommentSyntax.h"
 #include <QGuiApplication>
@@ -187,14 +188,19 @@ void ScintillaDslStyler::style()
             styles[i] = stack.isEmpty() ? (noteCharacter ? 5 : 0)
                 : stack.back() == ']' ? 2 : stack.back() == '}' ? 4 : 1;
             if (stack.isEmpty() && (ch == 'x' || ch == 'X' || ch == '*')) {
-                int a=i-1, b=i+1;
-                while (a>=0 && (text[a]==' ' || text[a]=='\\t')) --a;
-                while (b<text.size() && text[b]=='*') ++b;
-                int end=b;
-                while (end<text.size() && (text[end]==' ' || text[end]=='\\t')) ++end;
-                const bool start=a<0 || QByteArrayLiteral(",/})\\n").contains(text[a]);
-                const bool stop=end==text.size() || QByteArrayLiteral(",/|\\r\\n").contains(text[end]);
-                if (start && stop) { while (i<b) styles[i++]=7; --i; continue; }
+                int left = i - 1, after = i + 1;
+                while (left >= 0 && (text[left] == ' ' || text[left] == '\t')) --left;
+                while (after < text.size() && text[after] == '*') ++after;
+                int right = after;
+                while (right < text.size() && (text[right] == ' ' || text[right] == '\t')) ++right;
+                const bool start = left < 0 || QByteArrayLiteral(",/})\r\n").contains(text[left]);
+                const bool stop = right == text.size() || QByteArrayLiteral(",/\r\n").contains(text[right])
+                    || (text[right] == '|' && right + 1 < text.size() && text[right + 1] == '|');
+                if (start && stop) {
+                    std::fill(styles.begin() + i, styles.begin() + after, 7);
+                    i = after - 1;
+                    continue;
+                }
             }
             if (ch == '<' && text.mid(i + 1, 3) == "HS*") {
                 const int close = text.indexOf('>', i + 1);

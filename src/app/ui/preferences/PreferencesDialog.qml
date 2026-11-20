@@ -1123,17 +1123,34 @@ AppDialog {
                                     model: ["谱面推理设备","MERT 分析设备"]
                                     delegate: RowLayout {
                                         required property string modelData
+                                        id: deviceRow
                                         required property int index
                                         readonly property bool chartDevice: index === 0
                                         Text { text: modelData; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
                                         Repeater {
                                             model: ["cpu","cuda"]
-                                            delegate: AppButton {
+                                            delegate: RowLayout {
+                                                id: deviceChoice
                                                 required property string modelData
                                                 readonly property bool cpu: modelData === "cpu"
-                                                enabled: !!root.noaCopilot && (cpu ? root.noaCopilot.cpuAvailable : root.noaCopilot.cudaAvailable)
-                                                text: (cpu ? "CPU" : "CUDA") + (cpu === parent.chartDevice ? "（推荐）" : "") + ((parent.chartDevice ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) === modelData ? " ✓" : "")
-                                                onClicked: if (parent.chartDevice) root.noaCopilot.device = modelData; else root.noaCopilot.mertDevice = modelData
+                                                readonly property bool available: !!root.noaCopilot
+                                                    && (deviceRow.chartDevice
+                                                        ? (cpu ? root.noaCopilot.cpuAvailable : root.noaCopilot.cudaAvailable)
+                                                        : (cpu ? root.noaCopilot.cpuMertAvailable : root.noaCopilot.cudaMertAvailable))
+                                                AppButton {
+                                                    enabled: deviceChoice.available
+                                                    text: (deviceChoice.cpu ? "CPU" : "CUDA")
+                                                        + (deviceChoice.cpu === deviceRow.chartDevice ? "（推荐）" : "")
+                                                        + ((deviceRow.chartDevice ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) === deviceChoice.modelData ? " ✓" : "")
+                                                    onClicked: if (deviceRow.chartDevice) root.noaCopilot.device = deviceChoice.modelData
+                                                               else root.noaCopilot.mertDevice = deviceChoice.modelData
+                                                }
+                                                Text {
+                                                    visible: !!root.noaCopilot && !deviceChoice.available
+                                                    text: "请配置" + deviceChoice.modelData.toUpperCase() + "环境路径"
+                                                    color: Theme.colors.syntax.error
+                                                    font.pixelSize: Theme.captionFontSize
+                                                }
                                             }
                                         }
                                     }
@@ -1150,10 +1167,9 @@ AppDialog {
                                             text: root.noaCopilot ? (parent.cpu ? root.noaCopilot.cpuPython : root.noaCopilot.cudaPython) : ""
                                             onEditingFinished: if (parent.cpu) root.noaCopilot.cpuPython=text; else root.noaCopilot.cudaPython=text
                                         }
-                                        Text {
-                                            visible: !!root.noaCopilot && !(parent.cpu ? root.noaCopilot.cpuAvailable : root.noaCopilot.cudaAvailable)
-                                            text: "请配置"+modelData+"环境路径"
-                                            color: "#d55e61"
+                                        AppButton {
+                                            text: "浏览…"
+                                            onClicked: root.noaCopilot?.browseEnvironmentPython(parent.cpu)
                                         }
                                     }
                                 }

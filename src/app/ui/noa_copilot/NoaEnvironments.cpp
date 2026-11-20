@@ -9,6 +9,9 @@
 #include <QSet>
 #include <QStandardPaths>
 #include <future>
+#include <vector>
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace miacode::ui {
 namespace {
@@ -91,8 +94,12 @@ QVariantList probeNoaEnvironments(const QString& cpu, const QString& cuda, const
             if (path.startsWith('/'))
                 add(path);
     }
-    QVariantList rows;
-    for (const QString& path : paths) {
+    QThreadPool pool;
+    pool.setMaxThreadCount(3);
+    std::vector<QFuture<QVariantMap>> probes;
+    QStringList ordered = paths.values();
+    ordered.sort(Qt::CaseInsensitive);
+    for (const QString& path : ordered) {
 #ifdef Q_OS_WIN
         bool isWsl = path.startsWith('/');
 #else
@@ -120,27 +127,39 @@ QVariantList probeNoaEnvironments(const QString& cpu, const QString& cuda, const
             if (info.open(QIODevice::ReadOnly)) {
                 static const QRegularExpression compiled(R"(cuda[^=\n]*=\s*['"][0-9])");
                 cudaBuild = compiled.match(QString::fromUtf8(info.readAll())).hasMatch();
-            } else if (path != cpu && path != cuda)
+            } else if (path != QDir::fromNativeSeparators(cpu) && path != QDir::fromNativeSeparators(cuda))
                 continue;
         }
-        const QString probe = QStringLiteral("import json,torch,numpy,transformers,soundfile,scipy,torchaudio; "
-                                             "g=bool(%1 and torch.cuda.is_available()); "
-                                             "print(json.dumps(dict(ok=True,version=str(torch.__version__),cuda=g,"
-                                             "gpu=torch.cuda.get_device_name(0) if g else '')))")
-                                  .arg(driver && cudaBuild ? "True" : "False");
-        const QString result = isWsl ? run("wsl.exe", wsl + QStringList { "--exec", path, "-c", probe })
-                                     : run(path, { "-c", probe });
-        const auto obj = QJsonDocument::fromJson(result.section('\n', -1).toUtf8()).object();
-        rows.append(QVariantMap { { "path", path }, { "cpu", obj["ok"].toBool() },
-            { "cuda", obj["cuda"].toBool() },
-            { "label",
-                obj["ok"].toBool() ? path + " · " + obj["version"].toString() + " " + obj["gpu"].toString()
-                                   : path },
-            { "reason",
-                obj["ok"].toBool()
-                    ? (driver ? QStringLiteral("此环境没有可用的 CUDA") : QStringLiteral("未检测到 NVIDIA 驱动"))
-                    : result.section('\n', -1).left(220) } });
+        const QString probe = QStringLiteral(
+            "import json,torch,numpy,soundfile,scipy\n"
+            "g=bool(%1 and torch.cuda.is_available())\n"
+            "try:\n"
+            " import transformers\n"
+            " from torchaudio.transforms import AmplitudeToDB,MelScale,Spectrogram\n"
+            " mert=True; reason=''\n"
+            "except Exception as e:\n"
+            " mert=False; reason=str(e)\n"
+            "print(json.dumps(dict(ok=True,version=str(torch.__version__),cuda=g,mert=mert,"
+            "mert_reason=reason,gpu=torch.cuda.get_device_name(0) if g else '')))")
+            .arg(driver && cudaBuild ? "True" : "False");
+        probes.push_back(QtConcurrent::run(&pool, [path, probe, isWsl, wsl, driver] {
+            const QString result = isWsl ? run("wsl.exe", wsl + QStringList { "--exec", path, "-c", probe })
+                                         : run(path, { "-c", probe });
+            const auto obj = QJsonDocument::fromJson(result.section('\n', -1).toUtf8()).object();
+            return QVariantMap { { "path", path }, { "cpu", obj["ok"].toBool() },
+                { "cuda", obj["cuda"].toBool() }, { "mert", obj["mert"].toBool() },
+                { "mertReason", obj["mert_reason"].toString() },
+                { "label",
+                    obj["ok"].toBool() ? path + " · " + obj["version"].toString() + " " + obj["gpu"].toString()
+                                       : path },
+                { "reason",
+                    obj["ok"].toBool()
+                        ? (driver ? QStringLiteral("此环境没有可用的 CUDA") : QStringLiteral("未检测到 NVIDIA 驱动"))
+                        : result.section('\n', -1).left(220) } };
+        }));
     }
+    QVariantList rows;
+    for (const auto& result : probes) rows.append(result.result());
     return rows;
 }
 }

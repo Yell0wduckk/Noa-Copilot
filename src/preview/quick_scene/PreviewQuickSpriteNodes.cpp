@@ -184,11 +184,14 @@ public:
     int compare(const QSGMaterial* other) const override
     {
         const auto* otherMaterial = static_cast<const PreviewQuickSpriteMaterial*>(other);
+        if (grayscale != otherMaterial->grayscale) return grayscale ? 1 : -1;
         if (texture_ == otherMaterial->texture_) {
             return 0;
         }
         return texture_ < otherMaterial->texture_ ? -1 : 1;
     }
+
+    bool grayscale = false;
 
     void setBatchState(QSGTexture* texture, qreal wave, qreal absWave)
     {
@@ -245,10 +248,10 @@ bool PreviewQuickSpriteMaterialShader::updateUniformData(
 
     const float wave = static_cast<float>(material->wave());
     const float absWave = static_cast<float>(material->absWave());
-    const float effect = 0.0f;
+    const float grayscale = material->grayscale ? 1.0f : 0.0f;
     std::memcpy(uniformData->data() + 68, &wave, sizeof(float));
     std::memcpy(uniformData->data() + 72, &absWave, sizeof(float));
-    std::memcpy(uniformData->data() + 76, &effect, sizeof(float));
+    std::memcpy(uniformData->data() + 76, &grayscale, sizeof(float));
     return true;
 }
 
@@ -290,7 +293,7 @@ public:
         setFlag(QSGNode::OwnsMaterial, true);
     }
 
-    PreviewQuickSpriteBatchNodeUpdateProfile updateBatch(const OrderedRunScratch& run, qreal wave, qreal absWave)
+    PreviewQuickSpriteBatchNodeUpdateProfile updateBatch(const OrderedRunScratch& run, qreal wave, qreal absWave, bool grayscale)
     {
         PreviewQuickSpriteBatchNodeUpdateProfile profile;
         profile.requiredVertexCount = run.vertices.size();
@@ -340,7 +343,8 @@ public:
         }
         geometry_->markVertexDataDirty();
 
-        const bool textureChanged = lastTexture_ != run.texture;
+        const bool textureChanged = lastTexture_ != run.texture || material_->grayscale != grayscale;
+        material_->grayscale = grayscale;
         material_->setBatchState(run.texture, wave, absWave);
         // Only flag DirtyMaterial when the texture binding actually changed. Per-frame
         // wave/absWave uniform updates are picked up by updateUniformData() regardless of
@@ -500,7 +504,7 @@ QSGNode* buildPreviewSpriteNodeTree(
             batchNode = newNode;
         }
 
-        const PreviewQuickSpriteBatchNodeUpdateProfile batchProfile = batchNode->updateBatch(run, wave, absWave);
+        const PreviewQuickSpriteBatchNodeUpdateProfile batchProfile = batchNode->updateBatch(run, wave, absWave, textures->grayscale());
         frameProfile.geometryReallocCount += batchProfile.geometryReallocated ? 1 : 0;
         frameProfile.verticesCapacity += batchProfile.allocatedVertexCapacity;
         const int previousHint = root->familyVertexReserveHint.value(run.familyKey, 0);

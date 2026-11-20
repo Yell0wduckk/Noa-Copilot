@@ -826,7 +826,7 @@ TimelineQuickItem::TimelineQuickItem(QQuickItem* parent)
     , headerLayer_(std::make_unique<TimelineQuickHeaderLayer>())
     , gridLinesLayer_(std::make_unique<TimelineQuickGridLinesLayer>())
     , notesLayer_(std::make_unique<TimelineQuickNotesLayer>())
-    , ghostNotesLayer_(std::make_unique<TimelineQuickNotesLayer>())
+    , ghostNotesLayer_(std::make_unique<TimelineQuickNotesLayer>(true))
     , overlayLayer_(std::make_unique<TimelineQuickOverlayLayer>())
 {
     setFlag(ItemHasContents, true);

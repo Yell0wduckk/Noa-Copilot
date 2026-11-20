@@ -10,13 +10,14 @@ layout(location = 1) out float vOpacity;
 layout(location = 2) out float vWave;
 layout(location = 3) out float vAbsWave;
 layout(location = 4) out float vEffect;
+layout(location = 5) flat out float vGrayscale;
 
 layout(std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
     float wave;
     float absWave;
-    float effect;
+    float grayscale;
 };
 
 void main()
@@ -25,6 +26,7 @@ void main()
     vOpacity = aOpacity * qt_Opacity;
     vWave = wave;
     vAbsWave = absWave;
-    vEffect = aEffect + effect * 0.0;
+    vEffect = aEffect;
+    vGrayscale = grayscale;
     gl_Position = qt_Matrix * vec4(aPosition, 0.0, 1.0);
 }

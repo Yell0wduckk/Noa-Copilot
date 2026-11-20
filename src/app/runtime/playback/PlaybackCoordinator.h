@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/runtime/RuntimeContext.h"
+#include <QFuture>
 
 #include "app/services/AudioClockSource.h"
 #include "app/services/PlaybackControl.h"
@@ -330,7 +331,7 @@ public:
         int strikeStartCol,
         int strikeEndLine,
         int strikeEndCol, bool streaming = false);
-    int localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end);
+    QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end);
     void setCopilotReview(bool active);
     void clearGhostPreviewOverlay();
 
@@ -435,6 +436,7 @@ private:
     QVector<double> prefixEndSeconds_;
     QVector<TimelineNoteMarker> prefixIndexSource_;
     bool transientOverlay_ = false;
+    bool overlaySfxPending_ = false;
     mutable bool filteredValid_ = false, sfxValid_ = false;
     QVector<TimelineNoteMarker> ghostPreviewMarkers_;
     bool ghostStrikeActive_ = false;

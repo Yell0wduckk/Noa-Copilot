@@ -1,3 +1,4 @@
+#include "common/GrayscaleImage.h"
 #include "timeline/quick/TimelineQuickNotesLayer.h"
 
 #include <QMatrix4x4>
@@ -104,7 +105,7 @@ void appendHoldSpanBatched(
     TimelineQuickSpriteBatchBuilder& batch,
     const miacode::timeline::TimelineSceneHoldSpan& holdSpan,
     TimelineQuickTextureCache* textures,
-    qreal dpr)
+    qreal dpr, bool grayscale)
 {
     if (textures == nullptr) {
         return;
@@ -113,7 +114,7 @@ void appendHoldSpanBatched(
     const qreal holdScale = textures->holdScaleForBaseIconScale(
         holdSpan.spriteType, holdSpan.baseIconScale);
     const TimelineQuickHoldTextureParts parts =
-        textures->holdTextureParts(holdSpan.spriteType, holdScale);
+        textures->holdTextureParts(holdSpan.spriteType, holdScale, grayscale);
     if (parts.isValid()) {
         const qreal capY = holdSpan.rowTop
             + ((holdSpan.laneHeight - parts.leftCap.logicalSize.height()) / 2.0);
@@ -158,14 +159,14 @@ void appendHoldSpanBatched(
     fallbackParent->appendChildNode(buildTimelineLineNode(miacode::timeline::TimelineSceneLine{
         QPointF(holdSpan.startX, holdSpan.rowTop + (holdSpan.laneHeight / 2.0)),
         QPointF(holdSpan.endX, holdSpan.rowTop + (holdSpan.laneHeight / 2.0)),
-        holdSpan.fallbackColor,
+        grayscale ? miacode::grayscaleColor(holdSpan.fallbackColor) : holdSpan.fallbackColor,
         holdSpan.fallbackWidth,
     }));
     const QSize targetSize = textures->noteTargetSize(holdSpan.spriteType, holdScale);
     if (!targetSize.isValid()) {
         return;
     }
-    if (QSGTexture* texture = textures->noteTexture(holdSpan.spriteType, targetSize);
+    if (QSGTexture* texture = textures->noteTexture(holdSpan.spriteType, targetSize, 0, false, grayscale);
         texture != nullptr) {
         const qreal iconY = holdSpan.rowTop + ((holdSpan.laneHeight - targetSize.height()) / 2.0);
         batch.appendQuad(
@@ -241,7 +242,8 @@ QSGNode* TimelineQuickNotesLayer::updateNode(
     // sprites. Volume is small (a handful per chart at most), so
     // batching them isn't worth the extra material kind. Keep the
     // legacy QSGOpacityNode + QSGSimpleRectNode pattern.
-    for (const auto& rect : state.fireworkBands) {
+    for (auto rect : state.fireworkBands) {
+        if (grayscale_) rect.color = miacode::grayscaleColor(rect.color);
         auto* opacity = new QSGOpacityNode();
         opacity->setOpacity(0.55f);
         opacity->appendChildNode(buildTimelineRectNode(rect));
@@ -273,7 +275,7 @@ QSGNode* TimelineQuickNotesLayer::updateNode(
                 const QSize targetSize = textures->noteTargetSize(sprite.spriteType, sprite.scale);
                 if (!targetSize.isValid()) continue;
                 QSGTexture* tex = textures->noteTexture(
-                    sprite.spriteType, targetSize, sprite.rotationDegrees, sprite.mirrorX);
+                    sprite.spriteType, targetSize, sprite.rotationDegrees, sprite.mirrorX, grayscale_);
                 if (tex == nullptr) continue;
                 const QSizeF logicalSize = rotatedSpriteLogicalSize(targetSize, sprite.rotationDegrees);
                 trackBatch.appendQuad(tex, centeredSpriteRect(sprite.center, logicalSize, dpr));
@@ -287,13 +289,14 @@ QSGNode* TimelineQuickNotesLayer::updateNode(
         {
             TimelineQuickSpriteBatchBuilder holdBatch(bodyRoot);
             for (const auto& holdSpan : state.holdSpans) {
-                appendHoldSpanBatched(bodyRoot, holdBatch, holdSpan, textures, dpr);
+                appendHoldSpanBatched(bodyRoot, holdBatch, holdSpan, textures, dpr, grayscale_);
             }
             holdBatch.flush();
         }
 
         // Phase 3: touch-hold lines (between holds and notes z-wise).
-        for (const auto& line : state.touchHoldLines) {
+        for (auto line : state.touchHoldLines) {
+            if (grayscale_) line.color = miacode::grayscaleColor(line.color);
             bodyRoot->appendChildNode(buildTimelineLineNode(line));
         }
 
@@ -305,7 +308,7 @@ QSGNode* TimelineQuickNotesLayer::updateNode(
                 const QSize targetSize = textures->noteTargetSize(sprite.spriteType, sprite.scale);
                 if (!targetSize.isValid()) continue;
                 QSGTexture* tex = textures->noteTexture(
-                    sprite.spriteType, targetSize, sprite.rotationDegrees, sprite.mirrorX);
+                    sprite.spriteType, targetSize, sprite.rotationDegrees, sprite.mirrorX, grayscale_);
                 if (tex == nullptr) continue;
                 const QSizeF logicalSize = rotatedSpriteLogicalSize(targetSize, sprite.rotationDegrees);
                 noteBatch.appendQuad(tex, centeredSpriteRect(sprite.center, logicalSize, dpr));
@@ -315,7 +318,8 @@ QSGNode* TimelineQuickNotesLayer::updateNode(
     } else {
         // No texture cache — still need to emit lines so empty-but-
         // not-failing layouts look right.
-        for (const auto& line : state.touchHoldLines) {
+        for (auto line : state.touchHoldLines) {
+            if (grayscale_) line.color = miacode::grayscaleColor(line.color);
             bodyRoot->appendChildNode(buildTimelineLineNode(line));
         }
     }

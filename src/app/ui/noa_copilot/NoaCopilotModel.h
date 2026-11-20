@@ -16,6 +16,10 @@
 #include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
+#include <memory>
+
+class TimelineQuickModel;
+struct SimaiLineCache;
 
 namespace miacode {
 class UiRequestService;
@@ -71,10 +75,13 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QString mertDevice READ mertDevice WRITE setMertDevice NOTIFY configChanged)
     Q_PROPERTY(QString cpuPython READ cpuPython WRITE setCpuPython NOTIFY configChanged)
     Q_PROPERTY(QString cudaPython READ cudaPython WRITE setCudaPython NOTIFY configChanged)
+    Q_PROPERTY(bool exhaustionHint READ exhaustionHint NOTIFY ghostStateChanged)
     Q_PROPERTY(int selectedCandidate READ selectedCandidate NOTIFY ghostStateChanged)
     Q_PROPERTY(bool skeletonSelection READ skeletonSelection NOTIFY ghostStateChanged)
     Q_PROPERTY(QString candidateHint READ candidateHint NOTIFY ghostStateChanged)
     Q_PROPERTY(QString environmentStatus READ environmentStatus NOTIFY configChanged)
+    Q_PROPERTY(bool cpuMertAvailable READ cpuMertAvailable NOTIFY configChanged)
+    Q_PROPERTY(bool cudaMertAvailable READ cudaMertAvailable NOTIFY configChanged)
     Q_PROPERTY(bool cpuAvailable READ cpuAvailable NOTIFY configChanged)
     Q_PROPERTY(bool cudaAvailable READ cudaAvailable NOTIFY configChanged)
     Q_PROPERTY(QVariantList environments READ environments NOTIFY configChanged)
@@ -265,10 +272,13 @@ public:
     void setCpuPython(QString value);
     QString cudaPython() const { return cudaPython_; }
     void setCudaPython(QString value);
+    bool exhaustionHint() const { return exhaustionTimer_.isActive(); }
     int selectedCandidate() const { return selected_; }
     bool skeletonSelection() const { return skeletonSelection_; }
     QString candidateHint() const;
     QString environmentStatus() const { return environmentStatus_; }
+    bool cpuMertAvailable() const { return cpuMertAvailable_; }
+    bool cudaMertAvailable() const { return cudaMertAvailable_; }
     bool cpuAvailable() const { return cpuAvailable_; }
     bool cudaAvailable() const { return cudaAvailable_; }
     QVariantList environments() const { return environments_; }
@@ -326,6 +336,7 @@ public:
     Q_INVOKABLE void browseCheckpointFile();
     Q_INVOKABLE void browseCheckpointDirectory();
     Q_INVOKABLE void browseCustomPythonPath();
+    Q_INVOKABLE void browseEnvironmentPython(bool cpu);
     Q_INVOKABLE void browseCustomSourceRoot();
     Q_INVOKABLE void clearAudioCache();
     Q_INVOKABLE void releaseVram();
@@ -410,6 +421,7 @@ private:
         QString previewKey;
         bool ready = false, previewReady = false;
         int localIssues = 0;
+        quint64 analysisId = 0;
         int stepsTaken = 0, left = 0, right = 0, origEnd = 0, cut = 0, bridgeLength = 0;
         QString remainder, remainingPreview;
         double startSecond = 0, activeBpm = 120;
@@ -418,13 +430,22 @@ private:
     int selected_ = 0, wanted_ = 0, highCandidate_ = 0, scanGeneration_ = 0;
     bool exhausted_ = false, acceptingStep_ = false, skeletonSelection_ = false;
     bool cpuAvailable_ = false, cudaAvailable_ = false;
+    bool cpuMertAvailable_ = false, cudaMertAvailable_ = false;
     QString environmentStatus_;
-    quint64 strikeRevision_ = 0;
+    quint64 strikeRevision_ = 0, nextAnalysisId_ = 0;
     int strikeLeft_ = -1, strikeRight_ = -1;
     std::pair<int,int> strikeFrom_, strikeTo_;
     QVariantList environments_;
     QJsonObject request_, stepRequest_;
-    QTimer renderTimer_, warmTimer_;
+    QTimer renderTimer_, warmTimer_, exhaustionTimer_;
+    bool orderedSteps_ = false, needsChartSync_ = true;
+    QJsonObject lastWarmSignature_;
+    void selectBackendCandidate();
+    void notifyExhausted();
+    std::shared_ptr<SimaiLineCache> ghostLineCache_;
+    std::unique_ptr<TimelineQuickModel> ghostTimelineModel_;
+    void compileGhost(const QString& text, double start, double bpm, QVector<TimelineNoteMarker>& markers,
+                      TimelineRenderSnapshot& timeline);
     void prepareCandidatePreview(Candidate& candidate, const QString& simai);
     void showCandidate();
     bool handleStructured(const QJsonObject& message);

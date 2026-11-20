@@ -2,6 +2,8 @@
 
 #include "preview/quick_scene/PreviewTextureGenerationPolicy.h"
 
+#include "common/GrayscaleImage.h"
+
 #include <QHashFunctions>
 #include <QQuickWindow>
 #include <QSGTexture>
@@ -112,16 +114,7 @@ void PreviewTextureRepository::beginFrame()
 
 QImage PreviewTextureRepository::sceneImage(const QImage& source) const
 {
-    if (!grayscale_) return source;
-    QImage out = source.convertToFormat(QImage::Format_ARGB32);
-    for (int y=0; y<out.height(); ++y) {
-        auto* row = reinterpret_cast<QRgb*>(out.scanLine(y));
-        for (int x=0; x<out.width(); ++x) {
-            const QRgb c=row[x]; const int v=qGray(c);
-            row[x]=qRgba(v,v,v,qAlpha(c));
-        }
-    }
-    return out;
+    return grayscale_ ? miacode::grayscaleImage(source) : source;
 }
 
 QSGTexture* PreviewTextureRepository::textureForImage(const QImage& image, bool cacheable)
@@ -180,7 +173,8 @@ QSGTexture* PreviewTextureRepository::textureForImage(const QImage& image, bool 
         stats_.transientHitCount += 1;
         return existing;
     }
-    QSGTexture* texture = createOwnedTexture(image);
+    // Animated ghost sprites are desaturated by their fragment shader.
+    QSGTexture* texture = window_->createTextureFromImage(image);
     if (texture == nullptr) {
         return nullptr;
     }

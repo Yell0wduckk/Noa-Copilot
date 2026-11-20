@@ -35,7 +35,7 @@ Item {
     // Compact floating action hint pill positioned next to / below the inline Scintilla ghost text
     Rectangle {
         id: actionHintBadge
-        visible: root.ghostVisible
+        visible: root.ghostVisible || (root.noaCopilot?.exhaustionHint ?? false)
         readonly property bool singleLineGhost: Math.abs(root.ghostEndRect.y - root.ghostStartRect.y) < 4
         readonly property real inlineX: Math.round(root.ghostEndRect.x + 10)
         readonly property bool fitsInlineRight: singleLineGhost && (inlineX + width <= root.width - 12)
@@ -76,7 +76,8 @@ Item {
             }
 
             Repeater {
-                model: root.noaCopilot ? [root.noaCopilot.candidateHint, "↑ 原谱", "↓ 换一个", "→ 一拍", "Tab 采纳", "Esc 还原"] : []
+                model: root.noaCopilot?.exhaustionHint ? ["诺亚想不出来更多的写法了哦"]
+                    : root.noaCopilot ? [root.noaCopilot.candidateHint, "↑ 原谱", "↓ 换一个", "→ 一拍", "Tab 采纳", "Esc 还原"] : []
                 delegate: Text {
                     required property int index
                     required property string modelData
@@ -110,7 +111,7 @@ Item {
         opacity: 0.6
     }
     Rectangle {
-        visible: !!root.noaCopilot && root.noaCopilot.enabled && root.noaCopilot.skeletonSelection && !root.ghostVisible
+        visible: !!root.noaCopilot && root.noaCopilot.enabled && root.noaCopilot.skeletonSelection && !root.ghostVisible && !root.noaCopilot.exhaustionHint
         x: Math.max(4, Math.min(root.width-width-4,root.caretRect.x))
         y: Math.max(4, Math.min(root.height-height-4,root.caretRect.y+root.caretRect.height))
         width: fillHint.implicitWidth+16

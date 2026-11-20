@@ -333,10 +333,11 @@ void miacode::runtime::PlaybackCoordinator::applyPreviewPlaybackRate(double rate
                 miacode::oplog::appendStartupBeaconLine("ui/rate/bass_apply_paused_about_to_call");
                 state_.previewSfxRuntime_->applyPausedPreviewState(
                     effectiveSfxNoteMarkers(),
-                    false,
+                    overlaySfxPending_,
                     state_.pauseSecond_,
                     state_.previewPlaybackRate_,
                     state_.previewTimingSettings_);
+                overlaySfxPending_ = false;
                 miacode::oplog::appendStartupBeaconLine("ui/rate/bass_apply_paused_returned");
             }
         }

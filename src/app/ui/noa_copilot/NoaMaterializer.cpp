@@ -79,6 +79,42 @@ QString standalone(QString fragment, int division)
 }
 }
 
+// Only leading timing controls through the last BPM affect the audio grid.
+// Keeping their commas and divisions preserves fractional and {#seconds} spacing.
+QString noaWarmTimingText(QStringView chart)
+{
+    const qsizetype lastOpen = chart.lastIndexOf('(');
+    QString timing;
+    qsizetype lastTempoEnd = 0;
+    bool leading = true;
+    for (qsizetype i = 0; i <= lastOpen; ++i) {
+        const QChar ch = chart[i];
+        if (ch == '|' && i + 1 < chart.size() && chart[i + 1] == '|') {
+            i = chart.indexOf('\n', i + 2);
+            if (i < 0) break;
+        } else if (ch == ',') {
+            timing += ch;
+            leading = true;
+        } else if (leading && (ch == '(' || ch == '{')) {
+            const qsizetype end = chart.indexOf(ch == '(' ? ')' : '}', i + 1);
+            if (end < 0 || chart.sliced(i + 1, end - i - 1).contains(',')) {
+                leading = false;
+                continue;
+            }
+            timing += chart.sliced(i, end - i + 1);
+            if (ch == '(') lastTempoEnd = timing.size();
+            i = end;
+        } else if (!ch.isSpace()) {
+            if (leading && ch == 'E' && (i + 1 == chart.size() || chart[i + 1].isSpace() || chart[i + 1] == ','))
+                break;
+            leading = false;
+        }
+    }
+    timing.truncate(lastTempoEnd);
+    if (lastTempoEnd) timing += ',';
+    return timing;
+}
+
 void NoaMaterializer::begin(const QJsonObject& desc, const QString& original, int beats)
 {
     *this = NoaMaterializer();
