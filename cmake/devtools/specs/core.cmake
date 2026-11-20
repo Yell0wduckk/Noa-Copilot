@@ -13,6 +13,14 @@ miacode_add_dev_tool(simai_parser_spec TEST
     INCLUDES src
 )
 
+miacode_add_dev_tool(noa_materializer_spec TEST
+    SOURCES
+        src/tools/noa_copilot/NoaMaterializerSpec.cpp
+        src/app/ui/noa_copilot/NoaMaterializer.cpp
+    LIBS miacode_analysis miacode_chart Qt6::Core Qt6::Gui Qt6::Widgets
+    INCLUDES src
+)
+
 miacode_add_dev_tool(chart_batch_transform_spec TEST
     SOURCES
         src/tools/chart_transform/ChartBatchTransformSpec.cpp

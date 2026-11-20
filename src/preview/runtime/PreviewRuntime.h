@@ -336,6 +336,7 @@ private:
     // rebuild on EVERY preview frame for as long as the warm-up stayed armed.
     // INVARIANT: while armed-but-not-done, exactly one synthetic is present in
     // frameState_.noteMarkers and fireworkWarmupCenterSecond_ is its centre —
+    QVector<TimelineNoteMarker> sourceNoteMarkers_;
     // any site that clears noteMarkers must re-append (setNoteMarkers, reset).
     // `fireworkWarmupArmPresentCount_` + a present-count cap is only a backstop:
     // if the firework never renders at all (layer disabled, non-rendering

@@ -576,6 +576,11 @@ void parseToken(ParseState* state, const QString& token, int lineNumber, int col
         return;
     }
 
+    if (miacode::simai::isSkeletonItem(token)) {
+        parseTapOrHoldToken(state, QStringLiteral("1"), lineNumber, column, groupIndices);
+        state->result.noteMarkers.last().skeleton = true;
+        return;
+    }
     if (const QString fullwidthIssue = detectFullwidthSyntaxIssueMessage(token); !fullwidthIssue.isEmpty()) {
         appendTokenError(state, lineNumber, column, fullwidthIssue, column + token.size() - 1);
         return;
@@ -728,10 +733,53 @@ void markOpenIntervalMatches(
     }
 }
 
+struct CachedLine {
+    QString text;
+    ParseState before, after;
+    bool started = false, ended = false;
+};
+} // namespace
+
+struct SimaiLineCache {
+    QVector<CachedLine> lines;
+    miacode::simai::SimaiTimingMetadata timing;
+};
+
+namespace {
+bool sameLineClock(const CachedLine& cached, const ParseState& state, bool started)
+{
+    const auto& old=cached.before;
+    return cached.started==started && old.beats==state.beats && old.bpm==state.bpm
+        && old.hs==state.hs && old.meterNumerator==state.meterNumerator && old.meterDenominator==state.meterDenominator
+        && qAbs((old.second-old.currentMeasureStartSecond)-(state.second-state.currentMeasureStartSecond))<1e-10;
+}
+
+void appendCachedLine(SimaiParseResult& dest, const SimaiParseResult& line, double seconds, int rows, int groups)
+{
+    const int order=dest.noteMarkers.size();
+    for (auto marker : line.noteMarkers) {
+        marker.second+=seconds;
+        if (marker.endSecond>=0) marker.endSecond+=seconds;
+        if (marker.availableSecond>=0) marker.availableSecond+=seconds;
+        if (marker.slideTraceSecond>=0) marker.slideTraceSecond+=seconds;
+        if (seconds!=0) for (auto& time : marker.slideSegmentShootSeconds) time+=seconds;
+        marker.sourceLine+=rows;
+        if (marker.eachGroupId>=0) marker.eachGroupId+=groups;
+        marker.parseOrder+=order;
+        dest.noteMarkers.append(std::move(marker));
+    }
+    for (auto beat : line.beatMarkers) { beat.second+=seconds; beat.sourceLine+=rows; dest.beatMarkers.append(beat); }
+    for (double time : line.measureLineSeconds) appendDistinctSecond(&dest.measureLineSeconds,time+seconds);
+    for (auto error : line.errors) { error.line+=rows; dest.errors.append(std::move(error)); }
+    for (auto warning : line.warnings) { warning.line+=rows; dest.warnings.append(std::move(warning)); }
+    dest.ok=dest.ok && line.ok;
+    dest.durationSeconds=qMax(dest.durationSeconds,line.durationSeconds+seconds);
+}
+
 SimaiParseResult parseInternal(
     const QString& text,
     bool strictMode,
-    const miacode::simai::SimaiTimingMetadata& timingMetadata)
+    const miacode::simai::SimaiTimingMetadata& timingMetadata, std::shared_ptr<SimaiLineCache>* history = nullptr)
 {
     ParseState state;
     state.strictMode = strictMode;
@@ -856,8 +904,47 @@ SimaiParseResult parseInternal(
         noteSinceComma = false;
         clearPendingLineEndNote();
     };
+    const auto oldCache=history ? *history : nullptr;
+    const auto nextCache=history ? std::make_shared<SimaiLineCache>() : nullptr;
+    int suffix=0;
+    if (nextCache) {
+        nextCache->timing=timingMetadata;
+        nextCache->lines.reserve(lines.size());
+        if (oldCache && oldCache->timing==timingMetadata) {
+            while (suffix<lines.size() && suffix<oldCache->lines.size()
+                   && lines[lines.size()-1-suffix]==oldCache->lines[oldCache->lines.size()-1-suffix].text) ++suffix;
+        }
+    }
+    SimaiParseResult assembled;
     for (int lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
         miacode::task::CancellationScope::checkpoint();
+        CachedLine entry;
+        if (nextCache) {
+            entry.text=lines[lineIndex];
+            entry.before=state;
+            entry.started=initializedMeasureLines;
+            const int oldLine=lineIndex>=lines.size()-suffix
+                ? int(oldCache->lines.size()-lines.size()+lineIndex) : lineIndex;
+            if (oldCache && oldCache->timing==timingMetadata && oldLine>=0 && oldLine<oldCache->lines.size()) {
+                const auto& old=oldCache->lines[oldLine];
+                if (old.text==entry.text && sameLineClock(old,state,initializedMeasureLines)) {
+                    const double delta=state.second-old.before.second;
+                    const int group=state.nextEachGroupId-old.before.nextEachGroupId;
+                    state=old.after;
+                    state.second+=delta; state.currentMeasureStartSecond+=delta; state.nextEachGroupId+=group;
+                    if (delta || group || oldLine!=lineIndex) {
+                        SimaiParseResult shifted;
+                        appendCachedLine(shifted,state.result,delta,lineIndex-oldLine,group);
+                        state.result=std::move(shifted);
+                    }
+                    entry.after=state; entry.ended=initializedMeasureLines=old.ended;
+                    nextCache->lines.append(std::move(entry));
+                    appendCachedLine(assembled,state.result,0,0,0);
+                    state.result={};
+                    continue;
+                }
+            }
+        }
         QString line = lines.at(lineIndex);
         if (line.endsWith('\r')) {
             line.chop(1);
@@ -871,6 +958,12 @@ SimaiParseResult parseInternal(
         lineSawComma = false;
         if (isTerminalMarkerText(line)) {
             warnMissingExplicitSubdivision(&state);
+            if (nextCache) {
+                entry.after=state; entry.ended=initializedMeasureLines;
+                nextCache->lines.append(std::move(entry));
+                appendCachedLine(assembled,state.result,0,0,0);
+                state.result={};
+            }
             continue;
         }
         if (!initializedMeasureLines) {
@@ -1122,7 +1215,14 @@ SimaiParseResult parseInternal(
         warnLineEndNoteMissingComma(lineNumber, lineIndex + 1);
         finalizeEachGroup(&state, currentGroup);
         currentGroup.clear();
+        if (nextCache) {
+            entry.after=state; entry.ended=initializedMeasureLines;
+            nextCache->lines.append(std::move(entry));
+            appendCachedLine(assembled,state.result,0,0,0);
+            state.result={};
+        }
     }
+    if (nextCache) state.result=std::move(assembled);
 
     warnMissingExplicitSubdivision(&state);
 
@@ -1402,6 +1502,7 @@ SimaiParseResult parseInternal(
         state.result.durationSeconds,
         state.result.noteMarkers.isEmpty() ? 0.0 : state.result.noteMarkers.constLast().second
     );
+    if (history) *history=nextCache;
     return state.result;
 }
 
@@ -1485,6 +1586,12 @@ bool SimaiParser::isValidHoldDurationSignature(const QString& signature)
         }
     }
     return true;
+}
+
+SimaiParseResult SimaiParser::parseIncremental(const QString& text,
+    const miacode::simai::SimaiTimingMetadata& timing, std::shared_ptr<SimaiLineCache>& cache)
+{
+    return parseInternal(text,false,timing,&cache);
 }
 
 SimaiParseResult SimaiParser::parseForTimeline(

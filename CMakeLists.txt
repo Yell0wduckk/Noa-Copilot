@@ -869,6 +869,8 @@ qt_add_qml_module(MiaCode
     VERSION 1.0
     SOURCES
         src/app/ui/ApplicationContext.cpp
+        src/app/ui/noa_copilot/NoaEnvironments.cpp
+        src/app/ui/noa_copilot/NoaMaterializer.cpp
         src/app/ui/noa_copilot/NoaCopilotModel.cpp
         src/app/ui/noa_copilot/NoaCopilotModel.h
         src/app/ui/net/NetModel.cpp

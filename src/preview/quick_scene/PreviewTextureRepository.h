@@ -74,6 +74,7 @@ class PreviewTextureRepository
 {
 public:
     ~PreviewTextureRepository();
+    void setGrayscale(bool enabled) { grayscale_ = enabled; }
 
     void setWindow(QQuickWindow* window);
     bool resetRequiredBeforeFrame() const;
@@ -89,6 +90,8 @@ public:
     void clear();
 
 private:
+    QImage sceneImage(const QImage& source) const;
+    bool grayscale_ = false;
     void clearCachedTextures();
     void retireTexture(QSGTexture* texture);
 

@@ -101,7 +101,9 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol);
+        int strikeEndCol, bool streaming = false);
+    int localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end);
+    void setCopilotReview(bool active);
     void clearGhostPreviewOverlay();
 
 signals:

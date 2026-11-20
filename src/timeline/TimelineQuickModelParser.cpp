@@ -1,3 +1,4 @@
+#include "core/chart/parser/SimaiSkeleton.h"
 #include "timeline/TimelineQuickModel.h"
 
 #include <QTextBlock>
@@ -830,6 +831,9 @@ bool TimelineQuickModel::parseNoteToken(
             lineState->render.endSecond = qMax(lineState->render.endSecond, lineBaseSecond + note.endSecondOffset);
         }
     };
+
+    if (miacode::simai::isSkeletonItem(token))
+        return parseNoteToken(lineState, state, QStringLiteral("1"), lineNumber, column, groupIndices);
 
     bool simpleDigitCluster = token.size() > 1;
     for (QChar ch : token) {

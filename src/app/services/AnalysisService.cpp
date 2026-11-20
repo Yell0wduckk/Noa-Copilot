@@ -98,6 +98,13 @@ void AnalysisService::setLocale(SimaiValidationLocale locale)
     emit snapshotChanged(snapshot_.difficultyId, snapshot_.revision);
 }
 
+void AnalysisService::setCopilotReview(bool active)
+{
+    copilotReview_ = active;
+    if (active) diagnosticsTimer_.stop();
+    else if (diagnosticsRequested_ && !diagnosticsDeferred_) diagnosticsTimer_.start();
+}
+
 void AnalysisService::setDiagnosticsDeferred(bool deferred)
 {
     if (diagnosticsDeferred_ == deferred) return;
@@ -166,7 +173,7 @@ void AnalysisService::requestAnalysis()
 
 ParsedChartSnapshot AnalysisService::parse(ParsedChartSnapshot request)
 {
-    request.parseResult = SimaiParser::parseForTimeline(request.chartText, request.timingMetadata);
+    request.parseResult = SimaiParser::parseIncremental(request.chartText, request.timingMetadata, request.lineCache);
     miacode::task::CancellationScope::check();
     request.previewState = buildTimelinePreviewRefreshState(request.parseResult, request.firstSeconds);
     request.available = true;
@@ -231,6 +238,8 @@ void AnalysisService::dispatchPendingParse()
     if (shuttingDown_ || parseWorkerRunning_ || !pendingParse_) return;
     ParsedChartSnapshot request = std::move(*pendingParse_);
     pendingParse_.reset();
+    if (cacheDocument_==request.documentOpenGeneration && cacheDifficulty_==request.difficultyId)
+        request.lineCache=lineCache_;
     parseWorkerRunning_ = true;
     parseCancellation_ = std::make_shared<std::atomic_bool>(false);
     const auto cancellation = parseCancellation_;
@@ -252,6 +261,9 @@ void AnalysisService::dispatchPendingParse()
             guard->parseWorkerRunning_ = false;
             if (result && !cancellation->load(std::memory_order_relaxed)
                 && guard->identityIsCurrent(result->difficultyId, result->revision)) {
+                guard->lineCache_=result->lineCache;
+                guard->cacheDocument_=result->documentOpenGeneration;
+                guard->cacheDifficulty_=result->difficultyId;
                 guard->parsedSnapshot_ = std::move(*result);
                 emit guard->parseReady(guard->parsedSnapshot_.difficultyId, guard->parsedSnapshot_.revision);
                 guard->requestDiagnostics();
@@ -274,12 +286,12 @@ void AnalysisService::requestDiagnostics()
     snapshot_.locale = locale_;
     snapshot_.pending = true;
     emit snapshotChanged(snapshot_.difficultyId, snapshot_.revision);
-    if (!diagnosticsDeferred_) diagnosticsTimer_.start();
+    if (!diagnosticsDeferred_ && !copilotReview_) diagnosticsTimer_.start();
 }
 
 void AnalysisService::dispatchDiagnostics()
 {
-    if (shuttingDown_ || diagnosticsDeferred_ || diagnosticsWorkerRunning_ || !diagnosticsRequested_
+    if (shuttingDown_ || diagnosticsDeferred_ || copilotReview_ || diagnosticsWorkerRunning_ || !diagnosticsRequested_
         || diagnosticsTimer_.isActive() || !parsedSnapshot_.available) return;
     diagnosticsRequested_ = false;
     diagnosticsWorkerRunning_ = true;

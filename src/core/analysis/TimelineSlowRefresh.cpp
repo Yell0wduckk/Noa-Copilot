@@ -33,6 +33,7 @@ QByteArray noteMarkerSignature(const QVector<TimelineNoteMarker>& notes)
         signature.append('|');
         signature.append(QByteArray::number(marker.slideTraceSecond, 'f', 6));
         signature.append('|');
+        signature.append(marker.skeleton ? 'x' : 'n');
         signature.append(marker.type.toUtf8());
         signature.append('|');
         signature.append(marker.slideTrackKey.toUtf8());

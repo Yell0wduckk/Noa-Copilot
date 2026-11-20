@@ -621,7 +621,11 @@ void PreviewRuntime::setRetainedVideoFallbackFrame(const QImage& frame)
 
 void PreviewRuntime::setNoteMarkers(const QVector<TimelineNoteMarker>& notes)
 {
+    if (sourceNoteMarkers_.isSharedWith(notes) && !fireworkWarmupArmed_) return;
+    sourceNoteMarkers_ = notes;
     frameState_.noteMarkers = notes;
+    if (std::any_of(notes.cbegin(),notes.cend(),[](const auto& n){return n.skeleton;}))
+        frameState_.noteMarkers.removeIf([](const auto& n){return n.skeleton;});
     // Keep the firework warm-up marker alive across marker refreshes until
     // it has actually been presented — otherwise a marker push that lands
     // between arming and the warm-up render would drop it (and updates
@@ -1068,6 +1072,7 @@ void PreviewRuntime::reset(bool releaseStorage)
             .arg(frameState_.chartTitle.size())
             .arg(frameState_.render.showChartInfoHud ? 1 : 0));
     const auto presentationMode = frameState_.media.presentationMode;
+    sourceNoteMarkers_.clear();
     if (releaseStorage) {
         frameState_.noteMarkers = QVector<TimelineNoteMarker>();
         frameState_.ghostNoteMarkers = QVector<TimelineNoteMarker>();

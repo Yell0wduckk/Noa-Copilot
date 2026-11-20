@@ -1,4 +1,5 @@
 #include "core/chart/parser/SimaiParser.h"
+#include "core/chart/parser/SimaiSkeleton.h"
 
 #include "common/TaskCancellation.h"
 

@@ -329,7 +329,9 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol);
+        int strikeEndCol, bool streaming = false);
+    int localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end);
+    void setCopilotReview(bool active);
     void clearGhostPreviewOverlay();
 
     QObject* timelineStateBridge() const;
@@ -429,6 +431,11 @@ private:
     PlaybackIdentityGate identity_;
     double rangePlaybackStartSeconds_ = 0.0;
     double rangePlaybackEndSeconds_ = 0.0;
+    mutable QVector<TimelineNoteMarker> filteredSource_, filteredNormal_, cachedSfx_;
+    QVector<double> prefixEndSeconds_;
+    QVector<TimelineNoteMarker> prefixIndexSource_;
+    bool transientOverlay_ = false;
+    mutable bool filteredValid_ = false, sfxValid_ = false;
     QVector<TimelineNoteMarker> ghostPreviewMarkers_;
     bool ghostStrikeActive_ = false;
     int ghostStrikeStartLine_ = 0;

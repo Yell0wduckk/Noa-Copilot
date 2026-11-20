@@ -7,6 +7,7 @@ param(
     [string]$BuildDir = "build",
     [string]$DistDir = "",
     [switch]$IncludeDevTools,
+    [switch]$NoTorch,
     [int]$ArchiveCompression = 9,
     [int]$BuildJobs = [Environment]::ProcessorCount
 )
@@ -648,7 +649,7 @@ if (Test-Path $ffmpegSrc) {
 # Upstream builds and ARM64 packages can still use an external interpreter.
 $flatModels = if ($env:MIACODE_FLAT_MODELS) { $env:MIACODE_FLAT_MODELS } else { Join-Path $repoRoot "third_party/flat320-features" }
 if ($Arch -eq "x64" -and ($env:MIACODE_FLAT_MODELS -or (Test-Path -LiteralPath $flatModels))) {
-    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -ModelsSource $flatModels
+    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -ModelsSource $flatModels -NoTorch:$NoTorch
 }
 
 # Required package contents come from the toolchain data file.

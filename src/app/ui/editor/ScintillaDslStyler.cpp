@@ -82,6 +82,7 @@ void ScintillaDslStyler::setAppearance(const QFont& font, const QVariantMap& pal
     editor_.send(SCI_STYLESETFORE, 3, color(palette, "comment"));
     editor_.send(SCI_STYLESETFORE, 4, color(palette, palette.contains("beat") ? "beat" : "keyword"));
     editor_.send(SCI_STYLESETFORE, 5, color(palette, palette.contains("note") ? "note" : "text"));
+    editor_.send(SCI_STYLESETFORE, 7, blendedColor(palette, "keyword", "text", 0.65));
     editor_.send(SCI_STYLESETFORE, 6, color(palette, palette.contains("directive") ? "directive" : "keyword"));
     editor_.send(SCI_STYLESETFORE, STYLE_LINENUMBER, color(palette, "lineNumber"));
     editor_.send(SCI_STYLESETBACK, STYLE_LINENUMBER, color(palette, "background"));
@@ -185,6 +186,16 @@ void ScintillaDslStyler::style()
                 || QByteArrayLiteral("-^<>*").contains(ch);
             styles[i] = stack.isEmpty() ? (noteCharacter ? 5 : 0)
                 : stack.back() == ']' ? 2 : stack.back() == '}' ? 4 : 1;
+            if (stack.isEmpty() && (ch == 'x' || ch == 'X' || ch == '*')) {
+                int a=i-1, b=i+1;
+                while (a>=0 && (text[a]==' ' || text[a]=='\\t')) --a;
+                while (b<text.size() && text[b]=='*') ++b;
+                int end=b;
+                while (end<text.size() && (text[end]==' ' || text[end]=='\\t')) ++end;
+                const bool start=a<0 || QByteArrayLiteral(",/})\\n").contains(text[a]);
+                const bool stop=end==text.size() || QByteArrayLiteral(",/|\\r\\n").contains(text[end]);
+                if (start && stop) { while (i<b) styles[i++]=7; --i; continue; }
+            }
             if (ch == '<' && text.mid(i + 1, 3) == "HS*") {
                 const int close = text.indexOf('>', i + 1);
                 const int newline = text.indexOf('\n', i + 1);

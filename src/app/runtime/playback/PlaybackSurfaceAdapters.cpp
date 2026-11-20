@@ -250,7 +250,7 @@ void PlaybackPreviewSurfaceAdapter::setGhostPreviewOverlay(
     int strikeStartLine,
     int strikeStartCol,
     int strikeEndLine,
-    int strikeEndCol)
+    int strikeEndCol, bool streaming)
 {
     if (coordinator_ != nullptr) {
         coordinator_->setGhostPreviewOverlay(
@@ -259,8 +259,18 @@ void PlaybackPreviewSurfaceAdapter::setGhostPreviewOverlay(
             strikeStartLine,
             strikeStartCol,
             strikeEndLine,
-            strikeEndCol);
+            strikeEndCol, streaming);
     }
+}
+
+int PlaybackPreviewSurfaceAdapter::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+{
+    return coordinator_ ? coordinator_->localGhostIssues(markers,start,end) : 0;
+}
+
+void PlaybackPreviewSurfaceAdapter::setCopilotReview(bool active)
+{
+    if (coordinator_) coordinator_->setCopilotReview(active);
 }
 
 void PlaybackPreviewSurfaceAdapter::clearGhostPreviewOverlay()

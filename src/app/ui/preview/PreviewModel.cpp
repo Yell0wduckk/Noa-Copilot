@@ -420,7 +420,7 @@ void PreviewModel::setGhostPreviewOverlay(
     int strikeStartLine,
     int strikeStartCol,
     int strikeEndLine,
-    int strikeEndCol)
+    int strikeEndCol, bool streaming)
 {
     if (surface() != nullptr) {
         surface()->setGhostPreviewOverlay(
@@ -429,8 +429,18 @@ void PreviewModel::setGhostPreviewOverlay(
             strikeStartLine,
             strikeStartCol,
             strikeEndLine,
-            strikeEndCol);
+            strikeEndCol, streaming);
     }
+}
+
+int PreviewModel::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+{
+    return surface() ? surface()->localGhostIssues(markers,start,end) : 0;
+}
+
+void PreviewModel::setCopilotReview(bool active)
+{
+    if (surface()) surface()->setCopilotReview(active);
 }
 
 void PreviewModel::clearGhostPreviewOverlay()

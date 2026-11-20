@@ -45,6 +45,8 @@ public:
         : window_(window)
     {
         textures_.setWindow(window_);
+        ghostTextures_.setWindow(window_);
+        ghostTextures_.setGrayscale(true);
         createLayerSlots();
     }
 
@@ -55,10 +57,12 @@ public:
         // child node still holds its raw QSGTexture pointer.
         destroyAllChildren();
         textures_.clear();
+        ghostTextures_.clear();
     }
 
     QQuickWindow* window() const { return window_; }
     quint64 generation() const { return generation_; }
+    PreviewTextureRepository* ghostTextures() { return &ghostTextures_; }
     PreviewTextureRepository* textures() { return &textures_; }
 
     void ensureLayerSlots()
@@ -88,7 +92,10 @@ public:
     {
         clearLayerContentsFrom(0);
         textures_.clear();
+        ghostTextures_.clear();
         textures_.setWindow(window_);
+        ghostTextures_.setWindow(window_);
+        ghostTextures_.setGrayscale(true);
         ++generation_;
     }
 
@@ -110,7 +117,7 @@ private:
 
     QQuickWindow* window_ = nullptr;
     quint64 generation_ = 1;
-    PreviewTextureRepository textures_;
+    PreviewTextureRepository textures_, ghostTextures_;
 };
 
 quint64 nextPreviewQuickSceneRootInstanceId()
@@ -890,7 +897,7 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
     PreviewTextureRepository* textures = root->textures();
     const bool explicitTextureReset =
         textureResetRequested_.exchange(false, std::memory_order_acq_rel);
-    if (explicitTextureReset || textures->resetRequiredBeforeFrame()) {
+    if (explicitTextureReset || (textures->resetRequiredBeforeFrame() || root->ghostTextures()->resetRequiredBeforeFrame())) {
         const PreviewTextureStats statsBeforeReset = textures->stats();
         const quint64 previousGeneration = root->generation();
         root->resetTextureGeneration();
@@ -1290,6 +1297,8 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
             miacode::preview::scene::syncPreviewLayerWindowCursor(
                 ghostPreparedCache_.touchHoldLayer(), playheadSeconds, &ghostTouchHoldCursor_);
 
+            auto* ghostTextures = root->ghostTextures();
+            ghostTextures->beginFrame();
             auto* opacityRoot = dynamic_cast<QSGOpacityNode*>(oldChild);
             if (opacityRoot == nullptr || opacityRoot->childCount() != 6) {
                 delete oldChild;
@@ -1303,27 +1312,27 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
             }
             updateLayerSlot(layerSlotAt(opacityRoot, 0), true, [&](QSGNode* subOld) {
                 return ghostGuideLayer_.updateNode(
-                    subOld, ghostState, &ghostPreparedCache_, &ghostGuideCursor_, renderSize, window(), textures);
+                    subOld, ghostState, &ghostPreparedCache_, &ghostGuideCursor_, renderSize, window(), ghostTextures);
             });
             updateLayerSlot(layerSlotAt(opacityRoot, 1), true, [&](QSGNode* subOld) {
                 return ghostTrackLayer_.updateNode(
-                    subOld, ghostState, &ghostPreparedCache_, &ghostTrackCursor_, renderSize, window(), textures);
+                    subOld, ghostState, &ghostPreparedCache_, &ghostTrackCursor_, renderSize, window(), ghostTextures);
             });
             updateLayerSlot(layerSlotAt(opacityRoot, 2), true, [&](QSGNode* subOld) {
                 return ghostSlideMotionLayer_.updateNode(
-                    subOld, ghostState, &ghostPreparedCache_, &ghostSlideMotionCursor_, renderSize, window(), textures);
+                    subOld, ghostState, &ghostPreparedCache_, &ghostSlideMotionCursor_, renderSize, window(), ghostTextures);
             });
             updateLayerSlot(layerSlotAt(opacityRoot, 3), true, [&](QSGNode* subOld) {
                 return ghostHeadLayer_.updateNode(
-                    subOld, ghostState, &ghostPreparedCache_, &ghostHeadCursor_, renderSize, window(), textures);
+                    subOld, ghostState, &ghostPreparedCache_, &ghostHeadCursor_, renderSize, window(), ghostTextures);
             });
             updateLayerSlot(layerSlotAt(opacityRoot, 4), true, [&](QSGNode* subOld) {
                 return ghostTouchLayer_.updateNode(
-                    subOld, ghostState, &ghostPreparedCache_, &ghostTouchCursor_, renderSize, window(), textures);
+                    subOld, ghostState, &ghostPreparedCache_, &ghostTouchCursor_, renderSize, window(), ghostTextures);
             });
             updateLayerSlot(layerSlotAt(opacityRoot, 5), true, [&](QSGNode* subOld) {
                 return ghostTouchHoldLayer_.updateNode(
-                    subOld, ghostState, &ghostPreparedCache_, &ghostTouchHoldCursor_, renderSize, window(), textures);
+                    subOld, ghostState, &ghostPreparedCache_, &ghostTouchHoldCursor_, renderSize, window(), ghostTextures);
             });
             return opacityRoot;
         });

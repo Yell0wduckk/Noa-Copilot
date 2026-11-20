@@ -110,6 +110,20 @@ void PreviewTextureRepository::beginFrame()
     stats_ = PreviewTextureStats();
 }
 
+QImage PreviewTextureRepository::sceneImage(const QImage& source) const
+{
+    if (!grayscale_) return source;
+    QImage out = source.convertToFormat(QImage::Format_ARGB32);
+    for (int y=0; y<out.height(); ++y) {
+        auto* row = reinterpret_cast<QRgb*>(out.scanLine(y));
+        for (int x=0; x<out.width(); ++x) {
+            const QRgb c=row[x]; const int v=qGray(c);
+            row[x]=qRgba(v,v,v,qAlpha(c));
+        }
+    }
+    return out;
+}
+
 QSGTexture* PreviewTextureRepository::textureForImage(const QImage& image, bool cacheable)
 {
     if (window_ == nullptr || image.isNull()) {
@@ -146,7 +160,7 @@ QSGTexture* PreviewTextureRepository::textureForImage(const QImage& image, bool 
         // on Windows by default), so requesting mips here would route
         // through that same driver path. Pre-generated asset mips are
         // the planned follow-up.
-        QSGTexture* texture = window_->createTextureFromImage(image);
+        QSGTexture* texture = window_->createTextureFromImage(sceneImage(image));
         if (texture == nullptr) {
             return nullptr;
         }
@@ -197,7 +211,7 @@ QSGTexture* PreviewTextureRepository::retainedTextureForImage(const QString& slo
     }
 
     QSGTexture* replacement = mipmaps
-        ? window_->createTextureFromImage(image, QQuickWindow::TextureHasMipmaps)
+        ? window_->createTextureFromImage(sceneImage(image), QQuickWindow::TextureHasMipmaps)
         : createOwnedTexture(image);
     if (replacement == nullptr) {
         return entry.texture;
@@ -232,7 +246,7 @@ QSGTexture* PreviewTextureRepository::createOwnedTexture(const QImage& image) co
         return nullptr;
     }
     // beta20-fix2 — no mip request, see cached path comment above.
-    return window_->createTextureFromImage(image);
+    return window_->createTextureFromImage(sceneImage(image));
 }
 
 void PreviewTextureRepository::noteSpriteBatchStats(

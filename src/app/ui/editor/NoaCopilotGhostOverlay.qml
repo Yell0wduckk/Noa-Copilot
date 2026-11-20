@@ -75,65 +75,51 @@ Item {
                 color: Theme.colors.accent.primary
             }
 
-            Text {
-                text: root.ghostStreaming
-                    ? "续写中..."
-                    : (root.ghostOverwriting ? "Tab 采纳替换" : "Tab 采纳")
-                font.family: Theme.uiFont
-                font.pixelSize: Theme.captionFontSize
-                color: Theme.colors.accent.primary
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (!root.noaCopilot) return
-                        if (!root.ghostStreaming) root.noaCopilot.acceptGhostAll()
-                    }
-                }
-            }
-            Text {
-                visible: !root.ghostStreaming
-                text: "·"
-                font.family: Theme.uiFont
-                font.pixelSize: Theme.captionFontSize
-                color: Theme.colors.text.disabled
-            }
-            Text {
-                visible: !root.ghostStreaming
-                text: "Ctrl+→ 逐拍"
-                font.family: Theme.uiFont
-                font.pixelSize: Theme.captionFontSize
-                color: Theme.colors.text.secondary
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: if (root.noaCopilot) root.noaCopilot.acceptGhostNextStep()
-                }
-            }
-            Text {
-                text: "·"
-                font.family: Theme.uiFont
-                font.pixelSize: Theme.captionFontSize
-                color: Theme.colors.text.disabled
-            }
-            Text {
-                text: root.ghostStreaming ? "Esc 停止" : "Esc"
-                font.family: Theme.uiFont
-                font.pixelSize: Theme.captionFontSize
-                color: Theme.colors.text.secondary
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (!root.noaCopilot) return
-                        if (root.ghostStreaming) root.noaCopilot.cancelActiveGeneration()
-                        root.noaCopilot.dismissGhost()
+            Repeater {
+                model: root.noaCopilot ? [root.noaCopilot.candidateHint, "↑ 原谱", "↓ 换一个", "→ 一拍", "Tab 采纳", "Esc 还原"] : []
+                delegate: Text {
+                    required property int index
+                    required property string modelData
+                    text: modelData
+                    font.family: Theme.uiFont
+                    font.pixelSize: Theme.captionFontSize
+                    color: index === 0 ? Theme.colors.accent.primary : Theme.colors.text.secondary
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: index > 0
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (index === 1 || index === 2) root.noaCopilot.switchCandidate(index === 1 ? -1 : 1)
+                            if (index === 3) root.noaCopilot.acceptNextGhostStep()
+                            if (index === 4) root.noaCopilot.acceptGhostAll()
+                            if (index === 5) root.noaCopilot.dismissAllActivePreviews()
+                        }
                     }
                 }
             }
         }
     }
 
+    Rectangle {
+        visible: root.ghostVisible && root.noaCopilot.selectedCandidate > 0
+        x: 1
+        y: Math.max(0, root.ghostStartRect.y)
+        width: 2
+        height: Math.max(root.ghostStartRect.height, root.ghostEndRect.y + root.ghostEndRect.height - y)
+        color: Theme.colors.accent.primary
+        opacity: 0.6
+    }
+    Rectangle {
+        visible: !!root.noaCopilot && root.noaCopilot.enabled && root.noaCopilot.skeletonSelection && !root.ghostVisible
+        x: Math.max(4, Math.min(root.width-width-4,root.caretRect.x))
+        y: Math.max(4, Math.min(root.height-height-4,root.caretRect.y+root.caretRect.height))
+        width: fillHint.implicitWidth+16
+        height: 24
+        radius: Theme.smallControlRadius
+        color: Theme.surfaceColor(Theme.colors.background.elevated)
+        Text { id: fillHint; anchors.centerIn: parent; text: "填充采音 (Tab)"; color: Theme.colors.accent.primary; font.pixelSize: Theme.captionFontSize }
+        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.noaCopilot.triggerManualContinue() }
+    }
     // Bottom-right non-blocking indicator for audio analysis & full chart streaming
     Rectangle {
         id: activityBanner

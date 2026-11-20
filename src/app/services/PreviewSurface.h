@@ -96,7 +96,7 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol)
+        int strikeEndCol, bool streaming = false)
     {
         Q_UNUSED(ghostMarkers);
         Q_UNUSED(strikeActive);
@@ -105,6 +105,8 @@ public:
         Q_UNUSED(strikeEndLine);
         Q_UNUSED(strikeEndCol);
     }
+    virtual int localGhostIssues(const QVector<TimelineNoteMarker>&, double, double) { return 0; }
+    virtual void setCopilotReview(bool) {}
     virtual void clearGhostPreviewOverlay() {}
 
 protected:

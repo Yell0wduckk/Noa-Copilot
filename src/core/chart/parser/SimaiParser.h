@@ -1,6 +1,9 @@
 #pragma once
 
 #include <QString>
+#include <memory>
+
+struct SimaiLineCache;
 #include <QVector>
 
 #include "core/chart/document/SimaiTimingMetadata.h"
@@ -60,6 +63,8 @@ public:
     static SimaiParseResult parseForTimeline(
         const QString& text,
         const miacode::simai::SimaiTimingMetadata& timingMetadata = miacode::simai::SimaiTimingMetadata());
+    static SimaiParseResult parseIncremental(const QString& text,
+        const miacode::simai::SimaiTimingMetadata& timing, std::shared_ptr<SimaiLineCache>& cache);
     static SimaiParseResult validateSyntax(
         const QString& text,
         const miacode::simai::SimaiTimingMetadata& timingMetadata = miacode::simai::SimaiTimingMetadata());

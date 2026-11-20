@@ -6,11 +6,12 @@ param(
     [string]$ModelsSource = $env:MIACODE_FLAT_MODELS,
     [string]$WslDistribution = $env:MIACODE_WSL_DISTRO,
     [string]$WslPython = $env:MIACODE_WSL_PYTHON,
+    [switch]$NoTorch,
     [switch]$SourceOnly
 )
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-if (!$WorktreeRoot) { $WorktreeRoot = Join-Path $repoRoot "../../repos-0wd-v3/worktrees/v18-beat-mertv2-calibrator" }
+if (!$WorktreeRoot) { $WorktreeRoot = Join-Path $repoRoot "../../repos-0wd-v3/worktrees/v19-flat320-drafter-te" }
 if (!$SourceRevision) { $SourceRevision = "HEAD" }
 if (!$PythonEnvSource) { $PythonEnvSource = Join-Path $repoRoot "third_party/noa-copilot-env" }
 if (!$ModelsSource) { $ModelsSource = Join-Path $repoRoot "third_party/flat320-features" }
@@ -54,7 +55,7 @@ $architecture = [regex]::Match($identity, '(?m)^ARCHITECTURE = "([^"]+)"').Group
     ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $runtime "runtime.json")
 if ($SourceOnly) { return }
 
-Copy-RuntimeTree $PythonEnvSource (Join-Path $runtime "env")
+if (!$NoTorch) { Copy-RuntimeTree $PythonEnvSource (Join-Path $runtime "env") }
 $dst = New-Item -ItemType Directory -Force (Join-Path $runtime "models/mert-v2")
 foreach ($name in @("config.json", "model.safetensors", "configuration_mert2.py", "modeling_mert2.py",
                     "preprocessor_config.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md")) {

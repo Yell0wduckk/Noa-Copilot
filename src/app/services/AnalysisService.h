@@ -27,6 +27,7 @@ struct ParsedChartSnapshot {
     QString chartText;
     double firstSeconds = 0.0;
     miacode::simai::SimaiTimingMetadata timingMetadata;
+    std::shared_ptr<SimaiLineCache> lineCache;
     SimaiParseResult parseResult;
     TimelinePreviewRefreshState previewState;
 };
@@ -64,6 +65,7 @@ public:
     const ParsedChartSnapshot& parsedSnapshot() const { return parsedSnapshot_; }
     void requestAnalysis();
     void shutdown();
+    void setCopilotReview(bool active);
     void setDiagnosticsDeferred(bool deferred);
     void setLocale(SimaiValidationLocale locale);
     // The panel follows the preview's muri parameters. Re-analyzes only when one the
@@ -103,6 +105,9 @@ private:
     MuriRenderOptions renderOptions_;
     double staticTapOnSlideThresholdSeconds_ = -1.0;
     ParsedChartSnapshot parsedSnapshot_;
+    std::shared_ptr<SimaiLineCache> lineCache_;
+    quint64 cacheDocument_ = 0;
+    int cacheDifficulty_ = -1;
     AnalysisSnapshot snapshot_;
     std::optional<ParsedChartSnapshot> pendingParse_;
     QTimer diagnosticsTimer_;
@@ -112,6 +117,7 @@ private:
     bool parseWorkerRunning_ = false;
     bool diagnosticsWorkerRunning_ = false;
     bool diagnosticsRequested_ = false;
+    bool copilotReview_ = false;
     bool diagnosticsDeferred_ = false;
     bool shuttingDown_ = false;
 };

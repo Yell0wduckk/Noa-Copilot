@@ -1119,83 +1119,65 @@ AppDialog {
                             PreferenceGroup {
                                 title: "运行环境与推理源码"
 
-                                PreferenceCombo {
-                                    label: "计算设备"
-                                    options: root.noaCopilot ? root.noaCopilot.deviceModeOptions : []
-                                    currentValue: root.noaCopilot ? root.noaCopilot.deviceMode : "auto"
-                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.deviceMode = value }
+                                Repeater {
+                                    model: ["谱面推理设备","MERT 分析设备"]
+                                    delegate: RowLayout {
+                                        required property string modelData
+                                        required property int index
+                                        readonly property bool chartDevice: index === 0
+                                        Text { text: modelData; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
+                                        Repeater {
+                                            model: ["cpu","cuda"]
+                                            delegate: AppButton {
+                                                required property string modelData
+                                                readonly property bool cpu: modelData === "cpu"
+                                                enabled: !!root.noaCopilot && (cpu ? root.noaCopilot.cpuAvailable : root.noaCopilot.cudaAvailable)
+                                                text: (cpu ? "CPU" : "CUDA") + (cpu === parent.chartDevice ? "（推荐）" : "") + ((parent.chartDevice ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) === modelData ? " ✓" : "")
+                                                onClicked: if (parent.chartDevice) root.noaCopilot.device = modelData; else root.noaCopilot.mertDevice = modelData
+                                            }
+                                        }
+                                    }
                                 }
-
+                                Repeater {
+                                    model: ["CPU","CUDA"]
+                                    delegate: RowLayout {
+                                        required property string modelData
+                                        readonly property bool cpu: modelData === "CPU"
+                                        Text { text: modelData + " 环境"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
+                                        AppTextField {
+                                            Layout.fillWidth: true
+                                            placeholderText: parent.cpu ? "内置环境或 python.exe" : "python.exe 或 WSL /…/bin/python"
+                                            text: root.noaCopilot ? (parent.cpu ? root.noaCopilot.cpuPython : root.noaCopilot.cudaPython) : ""
+                                            onEditingFinished: if (parent.cpu) root.noaCopilot.cpuPython=text; else root.noaCopilot.cudaPython=text
+                                        }
+                                        Text {
+                                            visible: !!root.noaCopilot && !(parent.cpu ? root.noaCopilot.cpuAvailable : root.noaCopilot.cudaAvailable)
+                                            text: "请配置"+modelData+"环境路径"
+                                            color: "#d55e61"
+                                        }
+                                    }
+                                }
                                 RowLayout {
-                                    Layout.fillWidth: true
-                                    visible: root.noaCopilot && root.noaCopilot.deviceMode === "cuda" && root.noaCopilot.envMode === "bundled"
-                                    Text {
-                                        Layout.preferredWidth: root.settingsLabelWidth
-                                        text: "WSL 发行版"
-                                        color: Theme.colors.text.secondary
-                                    }
-                                    AppTextField {
-                                        Layout.fillWidth: true
-                                        text: root.noaCopilot ? root.noaCopilot.wslDistribution : ""
-                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.wslDistribution = text
+                                    Text { text: "WSL 发行版"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
+                                    AppTextField { Layout.fillWidth: true; text: root.noaCopilot?.wslDistribution ?? ""; onEditingFinished: root.noaCopilot.wslDistribution=text }
+                                    AppButton { text: "扫描本机环境"; onClicked: root.noaCopilot.scanEnvironments() }
+                                }
+                                Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: root.noaCopilot?.environmentStatus ?? ""; visible: text.length > 0; color: Theme.colors.text.secondary }
+                                Repeater {
+                                    model: root.noaCopilot?.environments ?? []
+                                    delegate: RowLayout {
+                                        required property var modelData
+                                        Text { Layout.fillWidth: true; text: modelData.label; elide: Text.ElideMiddle; color: Theme.colors.text.secondary }
+                                        AppButton { text: "用作 CPU"; enabled: modelData.cpu; onClicked: root.noaCopilot.cpuPython=modelData.path }
+                                        AppButton { text: "用作 CUDA"; enabled: modelData.cuda; onClicked: root.noaCopilot.cudaPython=modelData.path }
                                     }
                                 }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    visible: root.noaCopilot && root.noaCopilot.deviceMode === "cuda" && root.noaCopilot.envMode === "bundled"
-                                    Text {
-                                        Layout.preferredWidth: root.settingsLabelWidth
-                                        text: "WSL CUDA Python"
-                                        color: Theme.colors.text.secondary
-                                    }
-                                    AppTextField {
-                                        Layout.fillWidth: true
-                                        text: root.noaCopilot ? root.noaCopilot.wslPython : ""
-                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.wslPython = text
-                                    }
-                                }
-
                                 PreferenceCombo {
                                     label: "推理精度"
-                                    options: root.noaCopilot ? root.noaCopilot.precisionModeOptions : []
-                                    currentValue: root.noaCopilot ? root.noaCopilot.precisionMode : "bf16"
-                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.precisionMode = value }
+                                    options: root.noaCopilot?.precisionModeOptions ?? []
+                                    currentValue: root.noaCopilot?.precision ?? "bf16"
+                                    onPicked: value => root.noaCopilot.precision = value
                                 }
-
-                                PreferenceCombo {
-                                    label: "Python 环境"
-                                    options: root.noaCopilot ? root.noaCopilot.envModeOptions : []
-                                    currentValue: root.noaCopilot ? root.noaCopilot.envMode : "bundled"
-                                    onPicked: value => { if (root.noaCopilot) root.noaCopilot.envMode = value }
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    visible: root.noaCopilot ? root.noaCopilot.envMode === "custom" : false
-                                    spacing: 8
-
-                                    Text {
-                                        Layout.preferredWidth: root.settingsLabelWidth
-                                        text: "解释器路径"
-                                        color: Theme.colors.text.secondary
-                                        font.family: Theme.uiFont
-                                        font.pixelSize: Theme.uiFontSize
-                                    }
-
-                                    AppTextField {
-                                        Layout.fillWidth: true
-                                        placeholderText: "选择包含 torch 与 librosa 的 python.exe"
-                                        text: root.noaCopilot ? root.noaCopilot.customPythonPath : ""
-                                        onEditingFinished: if (root.noaCopilot) root.noaCopilot.customPythonPath = text
-                                    }
-
-                                    AppButton {
-                                        text: "浏览..."
-                                        onClicked: noaPythonDialog.open()
-                                    }
-                                }
-
                                 PreferenceCombo {
                                     label: "推理源码"
                                     options: root.noaCopilot ? root.noaCopilot.sourceModeOptions : []
@@ -1245,6 +1227,19 @@ AppDialog {
                             PreferenceGroup {
                                 title: "采样超参数与触发灵敏度"
 
+                                Repeater {
+                                    model: [{key:"lineAlignBeats",title:"每行对齐拍数",max:32},
+                                            {key:"candidateCount",title:"续写候选数",max:8},
+                                            {key:"cpuThreads",title:"CPU 推理线程",max:64}]
+                                    delegate: PreferenceSlider {
+                                        required property var modelData
+                                        label: modelData.title; from: 1; to: modelData.max; stepSize: 1; decimals: 0
+                                        value: root.noaCopilot ? root.noaCopilot[modelData.key] : 1
+                                        onMoved: v => root.noaCopilot[modelData.key] = Math.round(v)
+                                    }
+                                }
+                                AppCheckBox { text: "保存 MERT 特征"; checked: root.noaCopilot?.mertCache ?? true; onClicked: root.noaCopilot.mertCache = checked }
+                                AppCheckBox { text: "保存 RoFormer 和 Drafter 特征"; checked: root.noaCopilot?.roformerCache ?? true; onClicked: root.noaCopilot.roformerCache = checked }
                                 PreferenceSlider {
                                     label: "停顿触发延迟"
                                     from: 200

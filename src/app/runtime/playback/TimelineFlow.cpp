@@ -849,6 +849,9 @@ QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveNorm
     if (!ghostStrikeActive_ || ghostStrikeEndLine_ <= 0) {
         return source;
     }
+    if (filteredValid_ && filteredSource_.isSharedWith(source)) return filteredNormal_;
+    filteredSource_ = source;
+    sfxValid_ = false;
     QVector<TimelineNoteMarker> filtered;
     filtered.reserve(source.size());
     for (const TimelineNoteMarker& marker : source) {
@@ -863,11 +866,14 @@ QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveNorm
             filtered.append(marker);
         }
     }
-    return filtered;
+    filteredValid_ = true;
+    filteredNormal_ = filtered;
+    return filteredNormal_;
 }
 
 QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveSfxNoteMarkers() const
 {
+    if (sfxValid_ && filteredSource_.isSharedWith(state_.timeline_.latestTimelineNoteMarkers_)) return cachedSfx_;
     QVector<TimelineNoteMarker> combined = effectiveNormalNoteMarkers();
     if (ghostPreviewMarkers_.isEmpty()) {
         return combined;
@@ -882,6 +888,9 @@ QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveSfxN
         [](const TimelineNoteMarker& lhs, const TimelineNoteMarker& rhs) {
             return lhs.second < rhs.second;
         });
+    sfxValid_ = true;
+    filteredSource_ = state_.timeline_.latestTimelineNoteMarkers_;
+    cachedSfx_ = combined;
     return combined;
 }
 
@@ -891,11 +900,12 @@ void miacode::runtime::PlaybackCoordinator::pushEffectivePreviewAndSfxState(bool
         return;
     }
     const QVector<TimelineNoteMarker> normalMarkers = effectiveNormalNoteMarkers();
-    const QVector<TimelineNoteMarker> sfxMarkers = effectiveSfxNoteMarkers();
     if (state_.scene_ != nullptr) {
         state_.scene_->setNoteMarkers(normalMarkers);
         state_.scene_->setGhostNoteMarkers(ghostPreviewMarkers_);
     }
+    if (transientOverlay_ && !state_.playing_) return;
+    const auto sfxMarkers = effectiveSfxNoteMarkers();
     refreshPreviewObjectStatsTotals(normalMarkers);
     if (state_.previewSfxRuntime_ != nullptr) {
         if (state_.playing_) {
@@ -920,8 +930,13 @@ void miacode::runtime::PlaybackCoordinator::setGhostPreviewOverlay(
     int strikeStartLine,
     int strikeStartCol,
     int strikeEndLine,
-    int strikeEndCol)
+    int strikeEndCol, bool streaming)
 {
+    transientOverlay_ = streaming;
+    sfxValid_ = false;
+    if (ghostStrikeStartLine_ != strikeStartLine
+        || ghostStrikeStartCol_ != strikeStartCol || ghostStrikeEndLine_ != strikeEndLine
+        || ghostStrikeEndCol_ != strikeEndCol) filteredValid_ = false;
     ghostPreviewMarkers_ = ghostMarkers;
     ghostStrikeActive_ = strikeActive && strikeEndLine > 0;
     ghostStrikeStartLine_ = ghostStrikeActive_ ? strikeStartLine : 0;
@@ -931,17 +946,55 @@ void miacode::runtime::PlaybackCoordinator::setGhostPreviewOverlay(
     pushEffectivePreviewAndSfxState(true);
 }
 
+void miacode::runtime::PlaybackCoordinator::setCopilotReview(bool active)
+{
+    services_.analysis().setCopilotReview(active);
+    if (!active) {
+        prefixIndexSource_.clear();
+        prefixEndSeconds_.clear();
+        filteredValid_ = sfxValid_ = false;
+        filteredSource_.clear();
+        filteredNormal_.clear();
+        cachedSfx_.clear();
+    }
+}
+
+int miacode::runtime::PlaybackCoordinator::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+{
+    if (markers.isEmpty()) return 0;
+    const auto& source = state_.timeline_.latestTimelineNoteMarkers_;
+    if (!prefixIndexSource_.isSharedWith(source) || prefixEndSeconds_.size()!=source.size()) {
+        prefixIndexSource_ = source;
+        prefixEndSeconds_.clear(); prefixEndSeconds_.reserve(source.size());
+        double latest = -std::numeric_limits<double>::infinity();
+        for (const auto& n : source) {
+            latest = qMax(latest,qMax(n.second,n.endSecond)+0.150);
+            prefixEndSeconds_.append(latest);
+        }
+    }
+    const auto first = std::lower_bound(prefixEndSeconds_.cbegin(),prefixEndSeconds_.cend(),start);
+    QVector<TimelineNoteMarker> local;
+    for (qsizetype i=first-prefixEndSeconds_.cbegin(); i<source.size() && source[i].second<start; ++i) {
+        const auto& note = source[i];
+        if (!note.skeleton && qMax(note.second,note.endSecond)+0.150>=start) local.append(note);
+    }
+    local += markers;
+    const auto report = MuriAnalyzer::analyze(local,state_.muriRenderOptions_);
+    return int(std::count_if(report.diagnostics.cbegin(),report.diagnostics.cend(),[=](const auto& d){
+        return d.second >= start && d.second <= end;
+    }));
+}
+
 void miacode::runtime::PlaybackCoordinator::clearGhostPreviewOverlay()
 {
     if (ghostPreviewMarkers_.isEmpty() && !ghostStrikeActive_) {
         return;
     }
+    transientOverlay_ = false;
+    sfxValid_ = false;
+    cachedSfx_.clear();
     ghostPreviewMarkers_.clear();
     ghostStrikeActive_ = false;
-    ghostStrikeStartLine_ = 0;
-    ghostStrikeStartCol_ = 0;
-    ghostStrikeEndLine_ = 0;
-    ghostStrikeEndCol_ = 0;
     pushEffectivePreviewAndSfxState(true);
 }
 
@@ -967,6 +1020,7 @@ void miacode::runtime::PlaybackCoordinator::applyLatestTimelinePreviewStateToPau
     refreshPreviewObjectStatsTotals(normalMarkers);
     if (state_.scene_ != nullptr && noteMarkersChanged) {
         state_.scene_->setNoteMarkers(normalMarkers);
+        state_.scene_->setGhostNoteMarkers(ghostPreviewMarkers_);
     }
     validation_.applyAlignedMuriAnalysisReportToViews();
     state_.lastPreviewNoteMarkerSignature_ = state_.timeline_.latestTimelineNoteMarkerSignature_;

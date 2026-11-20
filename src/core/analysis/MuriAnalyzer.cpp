@@ -1230,14 +1230,18 @@ MuriAnalysisReport MuriAnalyzer::analyze(
     double staticTapOnSlideThresholdSeconds,
     QVector<MuriStaticReference>* staticReferences)
 {
+    auto playable = sourceMarkers;
+    if (std::any_of(playable.cbegin(), playable.cend(), [](const auto& note) { return note.skeleton; })) {
+        playable.removeIf([](const auto& note) { return note.skeleton; });
+    }
     QVector<MuriStaticReference> references = miacode::muri::buildStaticMuriReferences(
-        sourceMarkers, staticTapOnSlideThresholdSeconds);
+        playable, staticTapOnSlideThresholdSeconds);
     MuriAnalysisReport report;
     MuriDiagnosticCollector collector;
     QHash<QString, MarkerSourceRef> markerRefs;
     QHash<QString, RuntimeSlideJudgeResult> runtimeSlideResults;
     {
-        const QVector<TimelineNoteMarker> noteMarkers = prepareRuntimeMarkers(sourceMarkers);
+        const QVector<TimelineNoteMarker> noteMarkers = prepareRuntimeMarkers(playable);
         for (const TimelineNoteMarker& marker : noteMarkers) {
             miacode::task::CancellationScope::checkpoint();
             if (!report.sourceSignature.isEmpty()) report.sourceSignature += QLatin1Char(';');

@@ -93,4 +93,5 @@ struct TimelineNoteMarker {
     // later directive crosses the body. Effective fall speed = userFlowSpeed
     // * hsMultiplier. Default 1.0 = current/legacy behavior.
     double hsMultiplier = 1.0;
+    bool skeleton = false;
 };

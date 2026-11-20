@@ -125,7 +125,7 @@ void ScintillaEditorBridge::updatePolish()
     bool applied = false;
     if (navigation) {
         const auto& request = *navigation;
-        const int realLen = int(document_.text().size()) - (inlineGhostActive_ ? inlineGhostLength_ : 0);
+        const int realLen = int(document_.text().size()) - (inlineGhostActive_ ? inlineGhostLength_ - int(inlineOriginal_.size()) : 0);
         applied = navigationVisible_ && documentSession_ && !imeComposing_
             && request.difficulty == documentSession_->currentDifficultyId()
             && request.revision == documentSession_->documentRevision()
@@ -365,31 +365,32 @@ void ScintillaEditorBridge::setScrollPastEnd(bool value)
 }
 int ScintillaEditorBridge::visualToRealPosition(int visualPos) const
 {
-    if (!inlineGhostActive_ || inlineGhostLength_ <= 0) return visualPos;
+    if (!inlineGhostActive_) return visualPos;
     if (visualPos <= inlineGhostStart_) return visualPos;
     if (visualPos <= inlineGhostStart_ + inlineGhostLength_) return inlineGhostStart_;
-    return visualPos - inlineGhostLength_;
+    return visualPos - inlineGhostLength_ + inlineOriginal_.size();
 }
 int ScintillaEditorBridge::realToVisualPosition(int realPos, bool afterGhost) const
 {
-    if (!inlineGhostActive_ || inlineGhostLength_ <= 0) return realPos;
+    if (!inlineGhostActive_) return realPos;
     if (realPos > inlineGhostStart_ || (afterGhost && realPos == inlineGhostStart_))
-        return realPos + inlineGhostLength_;
+        return inlineGhostStart_ + inlineGhostLength_ + qMax(0, realPos - inlineGhostStrikeEnd_);
     return realPos;
 }
-int ScintillaEditorBridge::cursorPosition() const { return visualToRealPosition(document_.utf16Position(send(SCI_GETCURRENTPOS))); }
+int ScintillaEditorBridge::cursorPosition() const { return inlineGhostActive_ ? ghostCaret_ : visualToRealPosition(document_.utf16Position(send(SCI_GETCURRENTPOS))); }
 void ScintillaEditorBridge::setCursorPosition(int value) { select(value, value); }
-int ScintillaEditorBridge::selectionStart() const { return visualToRealPosition(document_.utf16Position(send(SCI_GETSELECTIONSTART))); }
-int ScintillaEditorBridge::selectionEnd() const { return visualToRealPosition(document_.utf16Position(send(SCI_GETSELECTIONEND))); }
+int ScintillaEditorBridge::selectionStart() const { return inlineGhostActive_ ? qMin(ghostCaret_, ghostAnchor_) : visualToRealPosition(document_.utf16Position(send(SCI_GETSELECTIONSTART))); }
+int ScintillaEditorBridge::selectionEnd() const { return inlineGhostActive_ ? qMax(ghostCaret_, ghostAnchor_) : visualToRealPosition(document_.utf16Position(send(SCI_GETSELECTIONEND))); }
 QString ScintillaEditorBridge::editorText() const
 {
     const QString& raw = document_.text();
-    if (!inlineGhostActive_ || inlineGhostLength_ <= 0) return raw;
+    if (!inlineGhostActive_) return raw;
     const int start = qBound(0, inlineGhostStart_, int(raw.size()));
     const int len = qBound(0, inlineGhostLength_, int(raw.size()) - start);
     QString real;
     real.reserve(raw.size() - len);
     real.append(QStringView(raw).left(start));
+    real.append(inlineOriginal_);
     real.append(QStringView(raw).mid(start + len));
     return real;
 }
@@ -974,19 +975,15 @@ void ScintillaEditorBridge::clearInlineGhostVisualOnly()
     const int savedUndo = int(send(SCI_GETUNDOCOLLECTION));
     const int savedTopLine = int(send(SCI_GETFIRSTVISIBLELINE));
     const int savedXOffset = int(send(SCI_GETXOFFSET));
-    const int savedRealCaret = cursorPosition();
-    const int savedRealAnchor = visualToRealPosition(document_.utf16Position(send(SCI_GETANCHOR)));
+    const int savedRealCaret = ghostCaret_;
+    const int savedRealAnchor = ghostAnchor_;
     send(SCI_SETUNDOCOLLECTION, 0);
-    if (inlineGhostLength_ > 0) {
-        const int rawLen = int(document_.text().size());
-        const int start = qBound(0, inlineGhostStart_, rawLen);
-        const int end = qBound(start, inlineGhostStart_ + inlineGhostLength_, rawLen);
-        if (end > start) {
-            send(SCI_SETTARGETSTART, document_.bytePosition(start));
-            send(SCI_SETTARGETEND, document_.bytePosition(end));
-            sends(SCI_REPLACETARGET, 0, "");
-        }
-    }
+    const int start = document_.bytePosition(inlineGhostStart_);
+    send(SCI_SETTARGETSTART, start);
+    send(SCI_SETTARGETEND, document_.bytePosition(inlineGhostStart_ + inlineGhostLength_));
+    const QByteArray original = inlineOriginal_.toUtf8();
+    sends(SCI_REPLACETARGET, original.size(), original.constData());
+    inlineOriginal_.clear();
     inlineGhostActive_ = false;
     inlineGhostStart_ = 0;
     inlineGhostLength_ = 0;
@@ -1030,7 +1027,7 @@ void ScintillaEditorBridge::setInlineGhostPreview(
         clearInlineGhostVisualOnly();
         return;
     }
-    const int realLen = qMax(0, int(document_.text().size()) - (inlineGhostActive_ ? inlineGhostLength_ : 0));
+    const int realLen = qMax(0, int(document_.text().size()) - (inlineGhostActive_ ? inlineGhostLength_ - int(inlineOriginal_.size()) : 0));
     const int boundedInsert = qBound(0, insertPos, realLen);
     const int boundedStrikeStart = qBound(0, qMin(strikeStart, strikeEnd), realLen);
     const int boundedStrikeEnd = qBound(boundedStrikeStart, qMax(strikeStart, strikeEnd), realLen);
@@ -1051,42 +1048,20 @@ void ScintillaEditorBridge::setInlineGhostPreview(
     const int savedXOffset = int(send(SCI_GETXOFFSET));
     send(SCI_SETUNDOCOLLECTION, 0);
 
-    if (inlineGhostActive_ && inlineGhostStart_ == boundedInsert) {
-        // Streaming fast path: replace only the existing ghost span (or append delta).
-        if (!inlineGhostText_.isEmpty() && ghostText.startsWith(inlineGhostText_)) {
-            const QByteArray delta = QStringView(ghostText).mid(inlineGhostText_.size()).toUtf8();
-            if (!delta.isEmpty()) {
-                const int appendPos = document_.bytePosition(inlineGhostStart_ + inlineGhostLength_);
-                send(SCI_SETTARGETSTART, appendPos);
-                send(SCI_SETTARGETEND, appendPos);
-                sends(SCI_REPLACETARGET, delta.size(), delta.constData());
-            }
-        } else {
-            const int startByte = document_.bytePosition(inlineGhostStart_);
-            const int endByte = document_.bytePosition(inlineGhostStart_ + inlineGhostLength_);
-            const QByteArray utf8 = ghostText.toUtf8();
-            send(SCI_SETTARGETSTART, startByte);
-            send(SCI_SETTARGETEND, endByte);
-            sends(SCI_REPLACETARGET, utf8.size(), utf8.constData());
-        }
-    } else {
-        if (inlineGhostActive_ && inlineGhostLength_ > 0) {
-            const int oldStart = qBound(0, inlineGhostStart_, int(document_.text().size()));
-            const int oldEnd = qBound(oldStart, inlineGhostStart_ + inlineGhostLength_, int(document_.text().size()));
-            if (oldEnd > oldStart) {
-                send(SCI_SETTARGETSTART, document_.bytePosition(oldStart));
-                send(SCI_SETTARGETEND, document_.bytePosition(oldEnd));
-                sends(SCI_REPLACETARGET, 0, "");
-            }
-        }
-        if (!ghostText.isEmpty()) {
-            const int insertByte = document_.bytePosition(boundedInsert);
-            const QByteArray utf8 = ghostText.toUtf8();
-            send(SCI_SETTARGETSTART, insertByte);
-            send(SCI_SETTARGETEND, insertByte);
-            sends(SCI_REPLACETARGET, utf8.size(), utf8.constData());
-        }
+    if (inlineGhostActive_ && (inlineGhostStart_ != boundedInsert || inlineGhostStrikeEnd_ != boundedStrikeEnd))
+        clearInlineGhostVisualOnly();
+    if (!inlineGhostActive_) {
+        ghostCaret_ = cursorPosition();
+        ghostAnchor_ = document_.utf16Position(send(SCI_GETANCHOR));
+        inlineOriginal_ = document_.text().mid(boundedInsert,boundedStrikeEnd-boundedInsert);
     }
+    const bool append = inlineGhostActive_ && ghostText.startsWith(inlineGhostText_);
+    const int a = append ? inlineGhostStart_+inlineGhostLength_ : boundedInsert;
+    const int b = inlineGhostActive_ ? inlineGhostStart_+inlineGhostLength_ : boundedStrikeEnd;
+    const QByteArray bytes = (append ? ghostText.mid(inlineGhostLength_) : ghostText).toUtf8();
+    send(SCI_SETTARGETSTART, document_.bytePosition(a));
+    send(SCI_SETTARGETEND, document_.bytePosition(b));
+    sends(SCI_REPLACETARGET, bytes.size(), bytes.constData());
 
     inlineGhostActive_ = true;
     inlineGhostStart_ = boundedInsert;
@@ -1103,11 +1078,7 @@ void ScintillaEditorBridge::setInlineGhostPreview(
     styler_.style();
     const int visInlineStart = inlineGhostStart_;
     const int visInlineEnd = inlineGhostStart_ + inlineGhostLength_;
-    const int visStrikeStart = realToVisualPosition(inlineGhostStrikeStart_, true);
-    const int visStrikeEnd = realToVisualPosition(inlineGhostStrikeEnd_, true);
-    styler_.ghostPreview(
-        visInlineEnd > visInlineStart, visInlineStart, visInlineEnd,
-        visStrikeEnd > visStrikeStart, visStrikeStart, visStrikeEnd);
+    styler_.ghostPreview(visInlineEnd > visInlineStart, visInlineStart, visInlineEnd, false, 0, 0);
 
     scrollVertical(savedTopLine);
     send(SCI_SETXOFFSET, savedXOffset);
@@ -1243,6 +1214,9 @@ void ScintillaEditorBridge::mouseReleaseEvent(QMouseEvent* event)
 {
     ScintillaQuick_item::mouseReleaseEvent(event);
     refreshSelection(!programmatic_);
+    if (event->button() == Qt::LeftButton && noaCopilot_ && selectionStart() != selectionEnd())
+        QMetaObject::invokeMethod(noaCopilot_.data(), "mouseSkeletonSelection", Qt::DirectConnection,
+                                  Q_ARG(bool,event->modifiers().testFlag(Qt::AltModifier)));
     if (event->button() == Qt::LeftButton && (event->modifiers() & (Qt::ControlModifier | Qt::MetaModifier))) seekPreviewToCaret();
 }
 void ScintillaEditorBridge::wheelEvent(QWheelEvent* event)

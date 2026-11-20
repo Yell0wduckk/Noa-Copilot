@@ -63,7 +63,9 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol) override;
+        int strikeEndCol, bool streaming = false) override;
+    int localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end) override;
+    void setCopilotReview(bool active) override;
     void clearGhostPreviewOverlay() override;
 
 private:

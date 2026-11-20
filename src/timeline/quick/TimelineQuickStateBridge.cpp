@@ -171,7 +171,7 @@ void TimelineQuickStateBridge::bumpOverlayDynamicRevision()
 void TimelineQuickStateBridge::clear()
 {
     snapshot_ = TimelineRenderSnapshot();
-    filteredSnapshot_ = TimelineRenderSnapshot();
+    clearGhostRangeCache();
     ghostSnapshot_ = TimelineRenderSnapshot();
     ghostStrikeActive_ = false;
     ghostStrikeStartLine_ = 0;
@@ -193,12 +193,19 @@ void TimelineQuickStateBridge::clear()
     emit renderStateChanged();
 }
 
+void TimelineQuickStateBridge::clearGhostRangeCache()
+{
+    filteredSnapshotValid_ = false;
+    filteredSnapshot_ = {};
+}
+
 void TimelineQuickStateBridge::rebuildFilteredSnapshot()
 {
     if (!ghostStrikeActive_ || ghostStrikeEndLine_ <= 0) {
-        filteredSnapshot_ = TimelineRenderSnapshot();
         return;
     }
+    if (filteredSnapshotValid_) return;
+    filteredSnapshotValid_ = true;
     filteredSnapshot_ = snapshot_;
     for (TimelineRenderLine& line : filteredSnapshot_.lines) {
         if (line.lineNumber < ghostStrikeStartLine_ || line.lineNumber > ghostStrikeEndLine_) {
@@ -222,6 +229,7 @@ void TimelineQuickStateBridge::rebuildFilteredSnapshot()
 void TimelineQuickStateBridge::setTimelineData(const TimelineRenderSnapshot& snapshot)
 {
     snapshot_ = snapshot;
+    clearGhostRangeCache();
     rebuildFilteredSnapshot();
     refreshLayoutMetrics();
     bumpAllRevisions();
@@ -267,22 +275,17 @@ void TimelineQuickStateBridge::setGhostStrikeRange(
     bool active, int startLine, int startCol, int endLine, int endCol)
 {
     const bool valid = active && endLine > 0;
-    const int nsl = valid ? startLine : 0;
-    const int nsc = valid ? startCol : 0;
-    const int nel = valid ? endLine : 0;
-    const int nec = valid ? endCol : 0;
-    if (ghostStrikeActive_ == valid
-        && ghostStrikeStartLine_ == nsl
-        && ghostStrikeStartCol_ == nsc
-        && ghostStrikeEndLine_ == nel
-        && ghostStrikeEndCol_ == nec) {
-        return;
-    }
+    const bool changedRange = valid && (startLine != ghostStrikeStartLine_ || startCol != ghostStrikeStartCol_
+        || endLine != ghostStrikeEndLine_ || endCol != ghostStrikeEndCol_);
+    if (ghostStrikeActive_ == valid && !changedRange) return;
     ghostStrikeActive_ = valid;
-    ghostStrikeStartLine_ = nsl;
-    ghostStrikeStartCol_ = nsc;
-    ghostStrikeEndLine_ = nel;
-    ghostStrikeEndCol_ = nec;
+    if (changedRange) {
+        ghostStrikeStartLine_ = startLine;
+        ghostStrikeStartCol_ = startCol;
+        ghostStrikeEndLine_ = endLine;
+        ghostStrikeEndCol_ = endCol;
+        clearGhostRangeCache();
+    }
     rebuildFilteredSnapshot();
     bumpNotesRevision();
     emit renderStateChanged();

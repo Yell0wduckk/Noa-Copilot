@@ -271,7 +271,8 @@ private:
     int inlineGhostLength_ = 0;
     int inlineGhostStrikeStart_ = 0;
     int inlineGhostStrikeEnd_ = 0;
-    QString inlineGhostText_;
+    QString inlineGhostText_, inlineOriginal_;
+    int ghostCaret_ = 0, ghostAnchor_ = 0;
     QRectF ghostStartRectangle_;
     QRectF ghostEndRectangle_;
 };

@@ -306,9 +306,9 @@ void DocumentModel::setChartText(const QString& value)
     publishWorkspaceCommit(WorkspaceCommitKind::ChartText);
 }
 
-bool DocumentModel::applyGeneratedChart(const QString& text)
+bool DocumentModel::applyGeneratedChart(const QString& text, bool persist)
 {
-    const bool saveToFile = !currentFilePath().isEmpty() && !workspace_->isNetPreview();
+    const bool saveToFile = persist && !currentFilePath().isEmpty() && !workspace_->isNetPreview();
     miacode::ChartWorkspaceFileResult result;
     if (!runWorkspaceMutation([&] {
             if (!saveToFile) return workspace_->replaceActiveDifficultyChart(text, true).accepted;

@@ -8,6 +8,7 @@
 #include "common/DebugLog.h"
 #include "core/chart/ChartAssetPaths.h"
 #include "core/chart/parser/SimaiParser.h"
+#include "core/chart/model/TimelineMarkerOffset.h"
 #include "preview/runtime/PreviewRuntime.h"
 #include "timeline/TimelineQuickModel.h"
 #include "timeline/quick/TimelineQuickStateBridge.h"
@@ -20,6 +21,10 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QMetaObject>
+#include <QScopedValueRollback>
+#include <QThread>
+#include <memory>
+#include "app/ui/noa_copilot/NoaEnvironments.h"
 #include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QStandardPaths>
@@ -80,6 +85,20 @@ std::pair<int, int> utf16OffsetToLineCol(const QString& text, int offset)
     return {line, col};
 }
 
+void compileGhost(const QString& text, double start, double bpm, QVector<TimelineNoteMarker>& markers,
+                  TimelineRenderSnapshot& timeline)
+{
+    QString chart = text.trimmed();
+    if (chart.isEmpty()) { markers = {}; timeline = {}; return; }
+    if (!chart.startsWith('(')) chart.prepend(QStringLiteral("(%1)").arg(bpm > 0 ? bpm : 160.0));
+    if (!chart.endsWith('E', Qt::CaseInsensitive)) chart.append(QStringLiteral("\nE"));
+    const auto parsed = SimaiParser::parseForTimeline(chart);
+    using namespace miacode::timeline::offset;
+    markers = shiftedNoteMarkers(parsed.noteMarkers, start, NonFiniteHandling::PassThrough);
+    TimelineQuickModel model;
+    model.rebuildFromText(chart, start, {});
+    timeline = model.snapshot();
+}
 } // namespace
 
 NoaCopilotModel::NoaCopilotModel(
@@ -101,6 +120,13 @@ NoaCopilotModel::NoaCopilotModel(
         pendingStreamChart_.clear();
         if (fullStreamingActive_ && !text.isEmpty()) publishFullChart(text);
     });
+    renderTimer_.setSingleShot(true);
+    renderTimer_.setInterval(65);
+    connect(&renderTimer_, &QTimer::timeout, this, &NoaCopilotModel::showCandidate);
+    warmTimer_.setSingleShot(true);
+    warmTimer_.setInterval(550);
+    connect(&warmTimer_, &QTimer::timeout, this, &NoaCopilotModel::warmSong);
+    connect(&document_, &DocumentModel::currentDifficultyFieldsChanged, this, [this] { warmTimer_.start(); });
     debounceTimer_.setSingleShot(true);
     connect(&debounceTimer_, &QTimer::timeout, this, [this]() {
         if (!enabled_ || !autoContinue_ || !hasCheckpoint() || busy() || inlineCardVisible_ || pendingRangeActive_) {
@@ -118,7 +144,7 @@ NoaCopilotModel::NoaCopilotModel(
     idleVramTimer_.setSingleShot(true);
     idleVramTimer_.setInterval(kIdleVramReleaseMs);
     connect(&idleVramTimer_, &QTimer::timeout, this, [this]() {
-        releaseVram();
+        if (device_ == QStringLiteral("cuda") && !activeRequestId_ && candidates_.isEmpty()) releaseVram();
     });
 
     // Ensure default checkpoints directory exists so users can drop .ckpt files into it.
@@ -129,6 +155,7 @@ NoaCopilotModel::NoaCopilotModel(
     loadPreferences();
     refreshCheckpoints();
     refreshAudioCacheSize();
+    scanEnvironments(false);
 
     connect(&document_, &DocumentModel::documentStateChanged, this, [this]() {
         if (!document_.hasDocument() || document_.wholeSourceEditorActive()) {
@@ -141,6 +168,8 @@ NoaCopilotModel::NoaCopilotModel(
         emit emptyCardChanged();
     });
     connect(&document_, &DocumentModel::documentReplaced, this, [this]() {
+        cancelActiveGeneration();
+        discardCandidates();
         dismissGhost();
         if (pendingRangeActive_) {
             rejectPendingRange();
@@ -154,9 +183,13 @@ NoaCopilotModel::NoaCopilotModel(
         sendBindSongIfNeeded();
     });
     connect(&document_, &DocumentModel::metadataChanged, this, [this]() {
+        warmTimer_.start();
         sendBindSongIfNeeded();
     });
     connect(&document_, &DocumentModel::currentDifficultyChanged, this, [this]() {
+        cancelActiveGeneration();
+        discardCandidates();
+        warmTimer_.start();
         dismissGhost();
         if (pendingRangeActive_) {
             rejectPendingRange();
@@ -167,12 +200,13 @@ NoaCopilotModel::NoaCopilotModel(
         emit emptyCardChanged();
     });
     connect(&document_, &DocumentModel::chartTextChanged, this, [this]() {
+        if (!fullStreamingActive_) warmTimer_.start();
         emit emptyCardChanged();
     });
 
     if (enabled_) {
         QTimer::singleShot(300, this, [this]() {
-            ensureDaemonRunning();
+            if (hasCheckpoint() || document_.hasDocument()) ensureDaemonRunning();
         });
     } else {
         updateStatus(QStringLiteral("disabled"), QStringLiteral("已关闭"));
@@ -202,10 +236,8 @@ QString NoaCopilotModel::defaultCheckpointsDir() const
 
 QString NoaCopilotModel::resolvedPythonPath() const
 {
-    if (pythonMode_ == QStringLiteral("custom") && !customPythonPath_.trimmed().isEmpty()) {
-        return QDir::cleanPath(customPythonPath_.trimmed());
-    }
-    if (usesWsl()) return wslPython_;
+    if (device_ == QStringLiteral("cuda")) return cudaPython_;
+    if (!cpuPython_.isEmpty()) return cpuPython_;
     return QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe"));
 }
 
@@ -233,11 +265,8 @@ QString NoaCopilotModel::resolvedCacheDir() const
 
 QVariantList NoaCopilotModel::deviceModeOptions() const
 {
-    return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("auto")}, {QStringLiteral("label"), QStringLiteral("自动（所选 Python 环境）")}},
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("cuda")}, {QStringLiteral("label"), QStringLiteral("CUDA（内置模式使用 WSL）")}},
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("cpu")}, {QStringLiteral("label"), QStringLiteral("CPU")}},
-    };
+    return {QVariantMap{{"value","cpu"},{"label","CPU"},{"enabled",cpuAvailable_}},
+            QVariantMap{{"value","cuda"},{"label","CUDA"},{"enabled",cudaAvailable_}}};
 }
 
 QVariantList NoaCopilotModel::precisionModeOptions() const
@@ -279,6 +308,14 @@ void NoaCopilotModel::loadPreferences()
 {
     const QJsonObject root = PreferenceDocument::loadPreferencesObject();
     const QJsonObject sec = root.value(QLatin1String(kPrefSectionKey)).toObject();
+    lineAlignBeats_ = sec["line_align_beats"].toInt(4);
+    candidateCount_ = sec["candidate_count"].toInt(3);
+    cpuThreads_ = sec["cpu_threads"].toInt(4);
+    mertCache_ = sec["mert_cache"].toBool(true);
+    roformerCache_ = sec["roformer_cache"].toBool(true);
+    mertDevice_ = sec["mert_device"].toString(QStringLiteral("cpu"));
+    cpuPython_ = sec["cpu_python"].toString();
+    cudaPython_ = sec["cuda_python"].toString();
     enabled_ = sec.value(QStringLiteral("enabled")).toBool(true);
     autoContinue_ = sec.value(QStringLiteral("auto_continue")).toBool(true);
     defaultDesigner_ = sec.value(QStringLiteral("default_designer")).toString();
@@ -301,6 +338,9 @@ void NoaCopilotModel::loadPreferences()
     customPythonPath_ = sec.value(QStringLiteral("custom_python_path")).toString();
     sourceMode_ = normalizeModeToken(sec.value(QStringLiteral("source_mode")).toString(QStringLiteral("bundled")));
     customSourceRoot_ = sec.value(QStringLiteral("custom_source_root")).toString();
+    if (device_ == "auto") device_ = "cpu";
+    if (cpuPython_.isEmpty() && pythonMode_ == "custom") cpuPython_ = customPythonPath_;
+    if (!sec.contains("cuda_python")) cudaPython_ = device_ == "cuda" && pythonMode_ == "custom" ? customPythonPath_ : wslPython_;
     // The previous Windows bundle saved its default interpreter in user preferences.
     if (sourceMode_ == QStringLiteral("bundled") && pythonMode_ == QStringLiteral("bundled")
         && !bundledPython.isEmpty() && wslDistribution_ == defaults.value(QStringLiteral("distribution")).toString()
@@ -313,6 +353,14 @@ void NoaCopilotModel::savePreferences() const
 {
     QJsonObject root = PreferenceDocument::loadPreferencesObject();
     QJsonObject sec;
+    sec["line_align_beats"] = lineAlignBeats_;
+    sec["candidate_count"] = candidateCount_;
+    sec["cpu_threads"] = cpuThreads_;
+    sec["mert_cache"] = mertCache_;
+    sec["roformer_cache"] = roformerCache_;
+    sec["mert_device"] = mertDevice_;
+    sec["cpu_python"] = cpuPython_;
+    sec["cuda_python"] = cudaPython_;
     sec.insert(QStringLiteral("enabled"), enabled_);
     sec.insert(QStringLiteral("auto_continue"), autoContinue_);
     sec.insert(QStringLiteral("default_designer"), defaultDesigner_);
@@ -448,13 +496,12 @@ void NoaCopilotModel::setDevice(const QString& value)
     if (device_ == value) {
         return;
     }
-    const bool wasWsl = usesWsl();
+    discardCandidates();
     device_ = value;
     savePreferences();
     emit configChanged();
     if (enabled_) {
-        if (usesWsl() != wasWsl) restartDaemon();
-        else sendConfigureRequest();
+        restartDaemon();
     }
 }
 
@@ -480,6 +527,81 @@ void NoaCopilotModel::setTemperature(double value)
     temperature_ = value;
     savePreferences();
     emit configChanged();
+}
+
+void NoaCopilotModel::setLineAlignBeats(int value)
+{
+    value = qBound(1, value, 64);
+    if (lineAlignBeats_ == value) return;
+    lineAlignBeats_ = value;
+    savePreferences();
+    emit configChanged();
+}
+
+void NoaCopilotModel::setCandidateCount(int value)
+{
+    value = qBound(1, value, 8);
+    if (candidateCount_ == value) return;
+    candidateCount_ = value;
+    savePreferences();
+    emit configChanged();
+}
+
+void NoaCopilotModel::setCpuThreads(int value)
+{
+    value = qBound(1, value, 64);
+    if (cpuThreads_ == value) return;
+    cpuThreads_ = value;
+    savePreferences();
+    emit configChanged();
+    if (enabled_) restartDaemon();
+}
+
+void NoaCopilotModel::setMertCache(bool value)
+{
+    if (mertCache_ == value) return;
+    mertCache_ = value;
+    savePreferences();
+    emit configChanged();
+    warmTimer_.start();
+}
+
+void NoaCopilotModel::setRoformerCache(bool value)
+{
+    if (roformerCache_ == value) return;
+    roformerCache_ = value;
+    savePreferences();
+    emit configChanged();
+    warmTimer_.start();
+}
+
+void NoaCopilotModel::setMertDevice(QString value)
+{
+    if (mertDevice_ == value) return;
+    mertDevice_ = value;
+    savePreferences();
+    emit configChanged();
+    if (enabled_) restartDaemon();
+}
+
+void NoaCopilotModel::setCpuPython(QString value)
+{
+    if (cpuPython_ == value) return;
+    cpuPython_ = value;
+    savePreferences();
+    emit configChanged();
+    scanEnvironments(false);
+    if (enabled_) restartDaemon();
+}
+
+void NoaCopilotModel::setCudaPython(QString value)
+{
+    if (cudaPython_ == value) return;
+    cudaPython_ = value;
+    savePreferences();
+    emit configChanged();
+    scanEnvironments(false);
+    if (enabled_) restartDaemon();
 }
 
 void NoaCopilotModel::setSlideBias(double value)
@@ -527,7 +649,11 @@ void NoaCopilotModel::setPythonMode(const QString& mode)
 
 bool NoaCopilotModel::usesWsl() const
 {
-    return pythonMode_ == QStringLiteral("bundled") && device_ == QStringLiteral("cuda");
+#ifdef Q_OS_WIN
+    return resolvedPythonPath().startsWith('/');
+#else
+    return false;
+#endif
 }
 
 void NoaCopilotModel::setWslPython(const QString& path)
@@ -545,7 +671,8 @@ void NoaCopilotModel::setWslDistribution(const QString& name)
     wslDistribution_ = name.trimmed();
     savePreferences();
     emit configChanged();
-    if (enabled_ && usesWsl()) restartDaemon();
+    scanEnvironments(false);
+    if (enabled_) restartDaemon();
 }
 
 void NoaCopilotModel::setCustomPythonPath(const QString& path)
@@ -807,7 +934,9 @@ void NoaCopilotModel::browseCustomSourceRoot()
 void NoaCopilotModel::refreshAudioCacheSize()
 {
     qint64 totalBytes = 0;
-    QDirIterator it(resolvedCacheDir(), QDir::Files, QDirIterator::Subdirectories);
+    if (document_.currentFilePath().isEmpty()) { audioCacheSizeText_ = "0 MB"; emit cacheInfoChanged(); return; }
+    const QDir project(QFileInfo(document_.currentFilePath()).dir().filePath(".miacode/.noacopilot"));
+    QDirIterator it(project.absolutePath(), {"mert_*.pt","roformer_*.pt","drafter_*.pt"}, QDir::Files);
     while (it.hasNext()) {
         it.next();
         totalBytes += it.fileInfo().size();
@@ -827,11 +956,11 @@ void NoaCopilotModel::clearAudioCache()
         cmd.insert(QStringLiteral("id"), nextRpcId_++);
         writeDaemonJson(cmd);
     }
-    QDir cacheDir(resolvedCacheDir());
-    if (cacheDir.exists()) {
-        cacheDir.removeRecursively();
+    if (!document_.currentFilePath().isEmpty()) {
+        const QDir cacheDir(QFileInfo(document_.currentFilePath()).dir().filePath(".miacode/.noacopilot"));
+        for (const auto& name : cacheDir.entryList({"mert_*.pt","roformer_*.pt","drafter_*.pt","manifest.json"},QDir::Files))
+            QFile::remove(cacheDir.filePath(name));
     }
-    QDir().mkpath(resolvedCacheDir());
     boundSongKey_.clear();
     refreshAudioCacheSize();
 }
@@ -848,6 +977,7 @@ void NoaCopilotModel::releaseVram()
 
 void NoaCopilotModel::restartDaemon()
 {
+    dismissGhost();
     stopDaemon();
     if (enabled_) {
         ensureDaemonRunning();
@@ -888,6 +1018,7 @@ void NoaCopilotModel::ensureDaemonRunning()
     daemonProcess_ = new QProcess(this);
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     env.insert(QStringLiteral("PYTHONNOUSERSITE"), QStringLiteral("1"));
+    env.insert(QStringLiteral("OMP_NUM_THREADS"), QString::number(cpuThreads_));
     env.insert(QStringLiteral("PYTHONUTF8"), QStringLiteral("1"));
     env.insert(QStringLiteral("PYTHONIOENCODING"), QStringLiteral("utf-8"));
     env.insert(QStringLiteral("PYTHONPATH"), QDir::toNativeSeparators(sourceRoot));
@@ -950,7 +1081,7 @@ void NoaCopilotModel::ensureDaemonRunning()
         if (!wslDistribution_.isEmpty()) launch << QStringLiteral("--distribution") << wslDistribution_;
         launch << QStringLiteral("--cd") << QDir::toNativeSeparators(sourceRoot)
                << QStringLiteral("--exec") << QStringLiteral("env") << QStringLiteral("PYTHONIOENCODING=utf-8")
-               << QStringLiteral("PYTHONNOUSERSITE=1") << wslPython_;
+               << QStringLiteral("PYTHONNOUSERSITE=1") << ("OMP_NUM_THREADS=" + QString::number(cpuThreads_)) << pythonExe;
         daemonProcess_->start(QStringLiteral("wsl.exe"), launch + args);
     } else {
         daemonProcess_->start(pythonExe, args);
@@ -961,6 +1092,7 @@ void NoaCopilotModel::stopDaemon()
 {
     endFullStream();
     stdoutBuffer_.clear();
+    warmTimer_.stop();
     debounceTimer_.stop();
     idleVramTimer_.stop();
     activeRequestId_ = 0;
@@ -1004,6 +1136,19 @@ void NoaCopilotModel::sendConfigureRequest()
         hasCheckpoint() ? QStringLiteral("starting") : QStringLiteral("missing_checkpoint"),
         hasCheckpoint() ? QStringLiteral("正在加载权重...") : QStringLiteral("未选择权重"));
     QJsonObject req;
+    req.insert("cpu_threads", cpuThreads_);
+    req.insert("mert_device", mertDevice_);
+    QString python = mertDevice_ == "cuda" ? cudaPython_ : cpuPython_;
+    if (python.isEmpty()) python = QDir(defaultBuiltinRoot()).filePath("env/python.exe");
+    QJsonArray command;
+    if (python != resolvedPythonPath() || mertDevice_ != device_) {
+        if (python.startsWith('/') && !usesWsl()) {
+            command.append("wsl.exe");
+            if (!wslDistribution_.isEmpty()) { command.append("-d"); command.append(wslDistribution_); }
+        } else command.append(python);
+    }
+    req["mert_command"] = command;
+    req["mert_python"] = python;
     req.insert(QStringLiteral("op"), QStringLiteral("configure"));
     req.insert(QStringLiteral("id"), nextRpcId_++);
     req.insert(QStringLiteral("checkpoint"), checkpointPath_);
@@ -1050,9 +1195,10 @@ void NoaCopilotModel::sendBindSongIfNeeded()
     const int reqId = nextRpcId_++;
     pendingBindSongId_ = reqId;
     QJsonObject req;
+    req = chartRequest();
     req.insert(QStringLiteral("op"), QStringLiteral("bind_song"));
     req.insert(QStringLiteral("id"), reqId);
-    req.insert(QStringLiteral("song_id"), songKey);
+    warmTimer_.start();
     req.insert(QStringLiteral("audio"), audioPath);
     req.insert(QStringLiteral("first"), currentChartFirstSeconds());
     req.insert(QStringLiteral("bpm"), currentChartBpm());
@@ -1106,6 +1252,8 @@ void NoaCopilotModel::sendSuggestRequest(
     }
 
     cancelActiveGeneration();
+    dismissGhost();
+    discardCandidates();
     pendingAcceptAfterStream_ = false;
     idleVramTimer_.start();
 
@@ -1142,6 +1290,7 @@ void NoaCopilotModel::sendSuggestRequest(
     const QString designerVal = effectiveDesigner(designerOverride);
 
     QJsonObject req;
+    req = chartRequest();
     req.insert(QStringLiteral("op"), QStringLiteral("suggest"));
     req.insert(QStringLiteral("id"), reqId);
     req.insert(QStringLiteral("revision"), static_cast<qint64>(activeRequestRevision_));
@@ -1161,6 +1310,7 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("temperature"), temperature_);
     req.insert(QStringLiteral("slide_bias"), slideBias_);
     req.insert(QStringLiteral("seed"), seed_);
+    request_ = req;
     writeDaemonJson(req);
 }
 
@@ -1204,8 +1354,287 @@ void NoaCopilotModel::handleDaemonReadyReadStderr()
     }
 }
 
+QJsonObject NoaCopilotModel::chartRequest() const
+{
+    const QString extra = document_.metadataExtraText();
+    QJsonObject request{{"protocol",2},{"audio",miacode::chart_assets::resolveTrackPath(document_.currentFilePath())},
+        {"text",document_.chartText()},{"first",currentChartFirstSeconds()},{"bpm",currentChartBpm()},
+        {"level",parseLevelNumeric(document_.currentDifficultyLevel())},{"difficulty",document_.currentDifficultyId()},
+        {"designer",effectiveDesigner()},{"line_align_beats",lineAlignBeats_},{"candidate_count",candidateCount_},
+        {"mert_cache",mertCache_},{"roformer_cache",roformerCache_}};
+    for (const auto& key : {QStringLiteral("shortid"),QStringLiteral("cabinet"),QStringLiteral("version")}) {
+        QRegularExpression field("^&" + key + "=([^\\r\\n]+)",QRegularExpression::MultilineOption);
+        const auto match = field.match(extra);
+        if (match.hasMatch()) request[key=="shortid" ? "song_id" : key] = match.captured(1).trimmed();
+    }
+    return request;
+}
+
+void NoaCopilotModel::scanEnvironments(bool discover)
+{
+    const int generation=++scanGeneration_;
+    const QString cpu=cpuPython_.isEmpty() ? QDir(defaultBuiltinRoot()).filePath("env/python.exe") : cpuPython_;
+    const QString cuda=cudaPython_, distro=wslDistribution_;
+    environmentStatus_=QStringLiteral("正在检测 PyTorch 环境…");
+    emit configChanged();
+    auto rows=std::make_shared<QVariantList>();
+    QThread* thread=QThread::create([cpu,cuda,distro,discover,rows] {
+        *rows=probeNoaEnvironments(cpu,cuda,distro,discover);
+    });
+    connect(thread,&QThread::finished,thread,&QObject::deleteLater);
+    connect(thread,&QThread::finished,this,[this,generation,cpu,cuda,rows] {
+        if (generation!=scanGeneration_) return;
+        environments_=*rows;
+        cpuAvailable_=cudaAvailable_=false;
+        QString reason;
+        for (const auto& v : *rows) {
+            const auto row=v.toMap();
+            const QString path=row["path"].toString();
+            if (path==QDir::fromNativeSeparators(cpu)) {
+                cpuAvailable_ = row["cpu"].toBool();
+                if (!cpuAvailable_) reason = row["reason"].toString();
+            }
+            if (path==QDir::fromNativeSeparators(cuda)) {
+                cudaAvailable_=row["cuda"].toBool();
+                if (!cudaAvailable_) reason=row["reason"].toString();
+            }
+        }
+        environmentStatus_=reason;
+        emit configChanged();
+    });
+    thread->start();
+}
+
+void NoaCopilotModel::warmSong()
+{
+    if (!enabled_ || !daemonConfigured_ || !hasCheckpoint() || fullStreamingActive_ || !document_.hasDocument()) return;
+    auto req = chartRequest();
+    if (req["audio"].toString().isEmpty()) return;
+    static const QRegularExpression bpmTag(R"(\(\s*[1-9]\d*(?:\.\d+)?\s*\))");
+    req["valid_bpm"] = document_.wholeBpm().toDouble() > 0 || bpmTag.match(document_.chartText()).hasMatch();
+    req["op"] = "warm";
+    req["id"] = nextRpcId_++;
+    writeDaemonJson(req);
+}
+
+bool NoaCopilotModel::hasSkeleton(bool selectionOnly) const
+{
+    if (document_.wholeSourceEditorActive() || !document_.hasDocument()) return false;
+    const QString body = document_.chartText();
+    const int lo = qMin(lastSelStart_,lastSelEnd_), hi = qMax(lastSelStart_,lastSelEnd_);
+    const bool selected = lo!=hi;
+    if (selectionOnly && !selected) return false;
+    const int pos = selected ? lo : lastCursorPos_;
+    const int a = pos > 0 ? int(body.lastIndexOf('\n',pos-1))+1 : 0;
+    const int nl = body.indexOf('\n',selected ? hi : pos);
+    const int b = nl < 0 ? int(body.size()) : nl;
+    static const QRegularExpression item(R"((?:^|[,/})])\s*(x|x?\*+)\s*(?=[/,]|$))",
+        QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption);
+    QString chunk = body.mid(a,b-a);
+    static const QRegularExpression comment(R"(\|\|[^\n]*)");
+    auto comments = comment.globalMatch(chunk);
+    while (comments.hasNext()) { const auto m = comments.next(); chunk.replace(m.capturedStart(),m.capturedLength(),QString(m.capturedLength(),' ')); }
+    auto matches = item.globalMatch(chunk);
+    while (matches.hasNext()) {
+        const auto match = matches.next();
+        if (!selected || (a + match.capturedStart(1) < hi && a + match.capturedEnd(1) > lo)) return true;
+    }
+    return false;
+}
+
+void NoaCopilotModel::mouseSkeletonSelection(bool quick)
+{
+    skeletonSelection_ = enabled_ && hasSkeleton(true);
+    emit ghostStateChanged();
+    if (skeletonSelection_ && quick) triggerManualContinue();
+}
+
+QString NoaCopilotModel::candidateHint() const
+{
+    if (!selected_) return QStringLiteral("原谱 #0");
+    QString label=QStringLiteral("候选 %1/%2").arg(selected_).arg(exhausted_ ? highCandidate_ : qMax(candidateCount_,highCandidate_));
+    const auto it=candidates_.constFind(selected_);
+    if (it!=candidates_.cend() && it->localIssues) label+=QStringLiteral(" · 局部无理 %1").arg(it->localIssues);
+    return label;
+}
+
+void NoaCopilotModel::discardCandidates()
+{
+    renderTimer_.stop();
+    strikeLeft_ = strikeRight_ = -1;
+    if (!candidates_.isEmpty()) {
+        preview_.setCopilotReview(false);
+        if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge())) bridge->clearGhostRangeCache();
+        if (activeRequestId_) writeDaemonJson({{"op","cancel"},{"id",activeRequestId_}});
+        writeDaemonJson({{"op","discard"},{"id",nextRpcId_++}});
+        activeRequestId_ = 0;
+    }
+    selected_ = wanted_ = highCandidate_ = 0;
+    exhausted_ = false;
+    candidates_.clear();
+    stepRequest_ = {};
+}
+
+void NoaCopilotModel::requestMore()
+{
+    if (activeRequestId_ || exhausted_ || !highCandidate_) return;
+    activeRequestId_ = nextRpcId_++;
+    QJsonObject req = request_;
+    req["op"] = "more";
+    req["id"] = activeRequestId_;
+    writeDaemonJson(req);
+}
+
+void NoaCopilotModel::switchCandidate(int direction)
+{
+    if (candidates_.isEmpty()) return;
+    int next = selected_+direction;
+    if (direction<0) {
+        if (next<0) return;
+        while (next > 0 && !candidates_.contains(next)) --next;
+    } else {
+        while (next <= highCandidate_ && !candidates_.contains(next)) ++next;
+    }
+    if (direction > 0 && (!candidates_.contains(next) || !candidates_[next].ready)) {
+        if (exhausted_ && next>highCandidate_) {
+            updateStatus("ready",QStringLiteral("诺亚想不出来更多的写法了哦"));
+            emit ghostStateChanged();
+            return;
+        }
+        wanted_ = next;
+        requestMore();
+        return;
+    }
+    wanted_=0;
+    selected_=next;
+    writeDaemonJson({{"op","select"},{"id",nextRpcId_++},{"candidate",next}});
+    showCandidate();
+    if (direction>0 && next==highCandidate_) requestMore();
+}
+
+void NoaCopilotModel::prepareCandidatePreview(Candidate& candidate, const QString& simai)
+{
+    if (candidate.previewReady && candidate.previewKey == simai) return;
+    compileGhost(simai, candidate.startSecond, candidate.activeBpm, candidate.markers, candidate.timeline);
+    candidate.localIssues = preview_.localGhostIssues(candidate.markers, candidate.startSecond,
+        candidate.writer.layout()["end_second"].toDouble());
+    candidate.previewKey = simai;
+    candidate.previewReady = true;
+}
+
+void NoaCopilotModel::showCandidate()
+{
+    if (candidates_.isEmpty()) return;
+    if (!selected_) {
+        ghostActive_ = true;
+        ghostStreaming_ = false;
+        ghostText_.clear();
+        ghostReplaceStart_ = ghostReplaceEnd_ = lastCursorPos_;
+        emit ghostStateChanged();
+        updateEditorGhostStrike();
+        clearDualSurfaceGhostPreview();
+        return;
+    }
+    auto& c = candidates_[selected_];
+    const auto& w = c.writer;
+    if (fullStreamingActive_) {
+        publishFullChart(w.text());
+        return;
+    }
+    ghostActive_ = true;
+    ghostStreaming_ = !c.ready;
+    ghostText_ = c.stepsTaken ? c.remainder : w.text();
+    ghostReplaceStart_=c.left; ghostReplaceEnd_=c.right;
+    ghostOrigSpanEnd_=c.origEnd; ghostOrigCut_=c.cut; ghostBridgeLen_=c.bridgeLength;
+    ghostCurrentStep_=c.stepsTaken;
+    const QString preview = c.stepsTaken ? c.remainingPreview : w.preview();
+    updateGhostSplitLines();
+    emit ghostStateChanged();
+    updateEditorGhostStrike();
+    applyDualSurfaceGhostPreview(preview,c.startSecond,c.activeBpm,c.left,c.right);
+}
+
+bool NoaCopilotModel::handleStructured(const QJsonObject& m)
+{
+    const QString event=m["event"].toString();
+    if (event!="candidate_begin" && event!="moment" && event!="beat" && event!="candidate_end" && event!="pool_end")
+        return false;
+    if (m["id"].toInt()!=activeRequestId_ || activeRequestRevision_!=document_.documentRevision()) return true;
+    const int number=m["candidate"].toInt();
+    if (event=="candidate_begin") {
+        preview_.setCopilotReview(true);
+        auto& c=candidates_[number];
+        c = Candidate();
+        c.writer.begin(m,document_.chartText(),lineAlignBeats_);
+        c.left=c.cut=m["left"].toInt(); c.right=c.origEnd=m["right"].toInt();
+        c.startSecond=m["start_second"].toDouble(); c.activeBpm=c.writer.bpm(m["start"].toInt());
+        if (!highCandidate_ && number==1) selected_=1;
+        if (inlineCardVisible_) closeInlineCard();
+        return true;
+    }
+    if (event=="pool_end") {
+        activeRequestId_=0;
+        exhausted_=m["exhausted"].toBool();
+        if (!highCandidate_ && exhausted_) {
+            dismissGhost();
+            updateStatus("ready",QStringLiteral("诺亚想不出来更多的写法了哦"));
+        } else if (wanted_>highCandidate_ && !exhausted_) {
+            requestMore();
+        } else if (wanted_>highCandidate_ && exhausted_) {
+            wanted_=0;
+            updateStatus("ready",QStringLiteral("诺亚想不出来更多的写法了哦"));
+        } else {
+            updateStatus("ready",QStringLiteral("就绪"),activeCheckpointName());
+        }
+        emit ghostStateChanged();
+        return true;
+    }
+    if (!candidates_.contains(number)) return true;
+    auto& c=candidates_[number];
+    if (event=="candidate_end") {
+        c.writer.finish();
+        c.ready=true;
+        if (!fullStreamingActive_) prepareCandidatePreview(c, c.writer.preview());
+        highCandidate_=qMax(number,highCandidate_);
+        if (wanted_==number) { selected_=number; wanted_=0; }
+        if (number==selected_) {
+            renderTimer_.stop();
+            showCandidate();
+            if (fullStreamingActive_) {
+                streamingBeat_ = streamingTotalBeats_;
+                streamingProgress_ = 1.0;
+                emit streamingProgressChanged();
+                endFullStream();
+                discardCandidates();
+                updateStatus("ready",QStringLiteral("整曲草稿已生成"),activeCheckpointName());
+            } else if (pendingAcceptAfterStream_) {
+                acceptFullGhost();
+            }
+        }
+        while (candidates_.size()>8) {
+            auto oldest=candidates_.begin();
+            while (oldest.key() == 1 || oldest.key() == selected_) ++oldest;
+            candidates_.erase(oldest);
+        }
+    } else {
+        if (event=="moment") c.writer.moment(m["tick"].toInt(),m["notes"].toArray());
+        else c.writer.advance(m["tick"].toInt());
+        if (number==selected_ && (fullStreamingActive_ || !c.ready)) {
+            if (fullStreamingActive_) {
+                streamingBeat_=c.writer.position()/96;
+                streamingTotalBeats_=(c.writer.layout()["stop"].toInt()+95)/96;
+                streamingProgress_=double(streamingBeat_)/qMax(1,streamingTotalBeats_);
+                emit streamingProgressChanged();
+            }
+            if (!renderTimer_.isActive()) renderTimer_.start();
+        }
+    }
+    return true;
+}
+
 void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
 {
+    if (handleStructured(message)) return;
     const QString event = message.value(QStringLiteral("event")).toString();
     if (event == QStringLiteral("configured")) {
         daemonConfigured_ = message.value(QStringLiteral("ok")).toBool();
@@ -1516,7 +1945,9 @@ bool NoaCopilotModel::publishFullChart(const QString& text)
     }
     lastStreamFlush_.restart();
     if (text == document_.chartText() && !document_.dirty()) return true;
-    if (!document_.applyGeneratedChart(text)) {
+    const bool persist = candidates_.isEmpty() || candidates_[selected_].ready || !diskFlush_.isValid() || diskFlush_.elapsed()>=1800;
+    if (persist) diskFlush_.start();
+    if (!document_.applyGeneratedChart(text,persist)) {
         cancelActiveGeneration();
         updateStatus(QStringLiteral("error"), QStringLiteral("无法保存生成中的谱面"));
         return false;
@@ -1530,6 +1961,8 @@ void NoaCopilotModel::endFullStream()
     streamFlushTimer_.stop();
     pendingStreamChart_.clear();
     if (!fullStreamingActive_) return;
+    if (!candidates_.isEmpty() && activeRequestRevision_ == document_.documentRevision() && document_.dirty())
+        document_.applyGeneratedChart(document_.chartText());
     fullStreamingActive_ = false;
     clearDualSurfaceGhostPreview();
     emit streamingProgressChanged();
@@ -1566,9 +1999,16 @@ void NoaCopilotModel::applyDualSurfaceGhostPreview(
     int strikeEndLine = 0;
     int strikeEndCol = 0;
     if (hasStrike) {
-        const QString chartText = document_.chartText();
-        const auto [sl, sc] = utf16OffsetToLineCol(chartText, strikeStartUtf16);
-        const auto [el, ec] = utf16OffsetToLineCol(chartText, strikeEndUtf16);
+        if (strikeRevision_ != document_.documentRevision() || strikeLeft_ != strikeStartUtf16 || strikeRight_ != strikeEndUtf16) {
+            strikeRevision_ = document_.documentRevision();
+            strikeLeft_ = strikeStartUtf16;
+            strikeRight_ = strikeEndUtf16;
+            const QString chart = document_.chartText();
+            strikeFrom_ = utf16OffsetToLineCol(chart, strikeLeft_);
+            strikeTo_ = utf16OffsetToLineCol(chart, strikeRight_);
+        }
+        const auto [sl, sc] = strikeFrom_;
+        const auto [el, ec] = strikeTo_;
         strikeStartLine = sl;
         strikeStartCol = sc;
         strikeEndLine = el;
@@ -1577,36 +2017,13 @@ void NoaCopilotModel::applyDualSurfaceGhostPreview(
 
     QVector<TimelineNoteMarker> ghostMarkers;
     TimelineRenderSnapshot ghostTimelineSnapshot;
-    if (!ghostSimai.trimmed().isEmpty()) {
-        QString normalizedSimai = ghostSimai;
-        if (!normalizedSimai.trimmed().startsWith(QLatin1Char('('))) {
-            normalizedSimai.prepend(QStringLiteral("(%1)").arg(activeBpm > 0.0 ? activeBpm : 160.0));
-        }
-        if (!normalizedSimai.trimmed().endsWith(QLatin1Char('E'), Qt::CaseInsensitive)) {
-            normalizedSimai.append(QStringLiteral("\nE"));
-        }
-
-        SimaiParseResult parsed = SimaiParser::parseForTimeline(normalizedSimai);
-        for (TimelineNoteMarker& marker : parsed.noteMarkers) {
-            marker.second += startSecond;
-            if (marker.endSecond >= 0.0) {
-                marker.endSecond += startSecond;
-            }
-            if (marker.slideTraceSecond >= 0.0) {
-                marker.slideTraceSecond += startSecond;
-            }
-            if (marker.availableSecond >= 0.0) {
-                marker.availableSecond += startSecond;
-            }
-            for (double& shootSec : marker.slideSegmentShootSeconds) {
-                shootSec += startSecond;
-            }
-        }
-        ghostMarkers = std::move(parsed.noteMarkers);
-
-        TimelineQuickModel ghostModel;
-        ghostModel.rebuildFromText(normalizedSimai, startSecond, {});
-        ghostTimelineSnapshot = ghostModel.snapshot();
+    Candidate* candidate = selected_ && candidates_.contains(selected_) ? &candidates_[selected_] : nullptr;
+    if (candidate && candidate->ready) {
+        prepareCandidatePreview(*candidate, ghostSimai);
+        ghostMarkers = candidate->markers;
+        ghostTimelineSnapshot = candidate->timeline;
+    } else {
+        compileGhost(ghostSimai, startSecond, activeBpm, ghostMarkers, ghostTimelineSnapshot);
     }
 
     // 1. Circular Preview + Playback SFX (excludes struck-through notes & gives ghost notes identical SFX)
@@ -1616,7 +2033,7 @@ void NoaCopilotModel::applyDualSurfaceGhostPreview(
         strikeStartLine,
         strikeStartCol,
         strikeEndLine,
-        strikeEndCol);
+        strikeEndCol, candidate && !candidate->ready);
 
     // 2. Bottom Timeline Ghost Notes + Struck-through exclusion
     if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge())) {
@@ -1705,6 +2122,7 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
     int selEnd,
     bool textChanged)
 {
+    if (acceptingStep_) return;
     const bool cursorMoved = (cursorPos != lastCursorPos_ || selStart != lastSelStart_ || selEnd != lastSelEnd_);
     lastCursorPos_ = cursorPos;
     lastSelStart_ = selStart;
@@ -1718,6 +2136,8 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
     if (ghostActive_ && (textChanged || cursorMoved)) {
         dismissGhost();
     }
+    const bool selection = selStart != selEnd && hasSkeleton(true);
+    if (selection != skeletonSelection_) { skeletonSelection_ = selection; emit ghostStateChanged(); }
     if (selStart != selEnd) {
         debounceTimer_.stop();
     }
@@ -1768,6 +2188,23 @@ bool NoaCopilotModel::handleEditorKeyPress(int key, int modifiers)
     const bool meta = (modifiers & Qt::MetaModifier) != 0;
     const bool plainTab = (key == Qt::Key_Tab && !ctrl && !shift && !alt && !meta);
 
+    if (!candidates_.isEmpty() && !fullStreamingActive_ && !ctrl && !alt && !shift && !meta) {
+        if (key == Qt::Key_Up || key == Qt::Key_Down) {
+            switchCandidate(key == Qt::Key_Up ? -1 : 1);
+            return true;
+        }
+        if (key == Qt::Key_Right) {
+            if (selected_ && !ghostStreaming_) acceptNextGhostStep();
+            return true;
+        }
+        if (plainTab) {
+            if (!selected_) dismissGhost();
+            else if (ghostStreaming_) pendingAcceptAfterStream_ = true;
+            else acceptFullGhost();
+            return true;
+        }
+        if (key == Qt::Key_Escape) { dismissGhost(); return true; }
+    }
     if (pendingRangeActive_) {
         if (plainTab) {
             if (rangeStreaming_) {
@@ -1854,9 +2291,9 @@ void NoaCopilotModel::triggerManualContinue()
 
 bool NoaCopilotModel::acceptFullGhost()
 {
-    if (!ghostActive_ || ghostText_.isEmpty()) {
-        return false;
-    }
+    if (!candidates_.isEmpty() && !selected_) { dismissGhost(); return true; }
+    if (ghostStreaming_) { pendingAcceptAfterStream_ = true; return true; }
+    if (!ghostActive_ || ghostText_.isEmpty()) return false;
     const QString textToInsert = ghostText_;
     const int startPos = ghostReplaceStart_;
     const int endPos = ghostReplaceEnd_;
@@ -1866,8 +2303,19 @@ bool NoaCopilotModel::acceptFullGhost()
 
 bool NoaCopilotModel::acceptNextGhostStep()
 {
-    if (!ghostActive_ || ghostText_.isEmpty()) {
+    if (!ghostActive_ || ghostStreaming_ || ghostText_.isEmpty()) {
         return false;
+    }
+    if (!candidates_.isEmpty() && selected_ && candidates_[selected_].ready) {
+        const auto& writer = candidates_[selected_].writer;
+        const auto step = writer.step(ghostCurrentStep_);
+        if (step.isEmpty()) return acceptFullGhost();
+        ghostSteps_ = QJsonArray{step,QJsonObject()};
+        ghostCurrentStep_ = 0;
+        stepRequest_ = request_;
+        stepRequest_["step_tick"] = step["tick"];
+        stepRequest_["candidate"] = selected_;
+        stepRequest_["division"] = step["division"];
     }
     if (ghostSteps_.isEmpty() || ghostCurrentStep_ >= ghostSteps_.size()) {
         return acceptFullGhost();
@@ -1898,6 +2346,7 @@ bool NoaCopilotModel::acceptNextGhostStep()
     const int nextStepIdx = ghostCurrentStep_ + 1;
     const int savedOrigSpanEnd = ghostOrigSpanEnd_;
 
+    QScopedValueRollback guard(acceptingStep_,true);
     ghostActive_ = false;
     applyEditorReplacement(insertStart, consumeEnd, replacement, nextCursor);
 
@@ -1920,11 +2369,51 @@ bool NoaCopilotModel::acceptNextGhostStep()
     emit ghostStateChanged();
     updateEditorGhostStrike();
     applyDualSurfaceGhostPreview(remGhostSimai, remStartSec, remBpm, ghostReplaceStart_, ghostReplaceEnd_);
+    if (!stepRequest_.isEmpty()) {
+        const int original = stepRequest_["candidate"].toInt();
+        auto candidate = candidates_[original];
+        const int prior = candidate.stepsTaken;
+        candidate.stepsTaken++;
+        candidate.remainder = remText;
+        candidate.remainingPreview = remGhostSimai;
+        candidate.startSecond = remStartSec;
+        candidate.activeBpm = remBpm;
+        candidate.left = ghostReplaceStart_;
+        candidate.right = ghostReplaceEnd_;
+        candidate.origEnd = ghostOrigSpanEnd_;
+        candidate.cut = ghostOrigCut_;
+        candidate.bridgeLength = ghostBridgeLen_;
+        if (activeRequestId_) writeDaemonJson({{"op","cancel"},{"id",activeRequestId_}});
+        renderTimer_.stop();
+        candidates_.clear();
+        candidate.previewKey.clear();
+        candidate.previewReady = false;
+        candidates_.insert(1,candidate);
+        selected_ = highCandidate_ = 1; wanted_ = 0; exhausted_ = false;
+        activeRequestId_ = nextRpcId_++;
+        activeRequestRevision_ = document_.documentRevision();
+        lastCursorPos_ = lastSelStart_ = lastSelEnd_ = nextCursor;
+        lastObservedEditorText_ = document_.chartText();
+        stepRequest_["accepted_steps"] = prior+1;
+        stepRequest_["id"] = activeRequestId_;
+        stepRequest_["revision"] = qint64(activeRequestRevision_);
+        stepRequest_["text"] = lastObservedEditorText_;
+        stepRequest_["cursor_offset"] = nextCursor;
+        stepRequest_["sel_start"] = stepRequest_["sel_end"] = nextCursor;
+        stepRequest_["replace_start"] = nextCursor;
+        stepRequest_["replace_end"] = ghostReplaceEnd_;
+        request_ = stepRequest_;
+        ghostCurrentStep_ = prior+1;
+        writeDaemonJson(stepRequest_);
+        stepRequest_ = {};
+        emit ghostStateChanged();
+    }
     return true;
 }
 
 void NoaCopilotModel::dismissGhost()
 {
+    discardCandidates();
     debounceTimer_.stop();
     pendingAcceptAfterStream_ = false;
     if (!ghostActive_ && !ghostStreaming_ && ghostText_.isEmpty() && ghostReplaceStart_ == 0 && ghostReplaceEnd_ == 0) {
@@ -1969,6 +2458,7 @@ void NoaCopilotModel::openInlineCard()
     if (!enabled_ || !document_.hasDocument() || document_.currentDifficultyId() <= 0) {
         return;
     }
+    if (hasSkeleton(false)) { triggerManualContinue(); return; }
     dismissGhost();
     if (pendingRangeActive_) {
         rejectPendingRange();
@@ -2117,6 +2607,7 @@ void NoaCopilotModel::cancelActiveGeneration()
         rejectPendingRange();
     }
     endFullStream();
+    discardCandidates();
     if (checkpointLoadedInDaemon_) {
         updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
     }

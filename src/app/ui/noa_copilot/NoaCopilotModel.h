@@ -1,5 +1,8 @@
 #pragma once
 
+#include "app/ui/noa_copilot/NoaMaterializer.h"
+#include "core/chart/model/TimelineData.h"
+#include "timeline/TimelineRenderData.h"
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QJsonArray>
@@ -55,11 +58,26 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QVariantList designerOptions READ designerOptions NOTIFY designerOptionsChanged)
     Q_PROPERTY(QString device READ device WRITE setDevice NOTIFY configChanged)
     Q_PROPERTY(QString deviceMode READ device WRITE setDevice NOTIFY configChanged)
-    Q_PROPERTY(QVariantList deviceModeOptions READ deviceModeOptions CONSTANT)
+    Q_PROPERTY(QVariantList deviceModeOptions READ deviceModeOptions NOTIFY configChanged)
     Q_PROPERTY(QString precision READ precision WRITE setPrecision NOTIFY configChanged)
     Q_PROPERTY(QString precisionMode READ precision WRITE setPrecision NOTIFY configChanged)
     Q_PROPERTY(QVariantList precisionModeOptions READ precisionModeOptions CONSTANT)
 
+    Q_PROPERTY(int lineAlignBeats READ lineAlignBeats WRITE setLineAlignBeats NOTIFY configChanged)
+    Q_PROPERTY(int candidateCount READ candidateCount WRITE setCandidateCount NOTIFY configChanged)
+    Q_PROPERTY(int cpuThreads READ cpuThreads WRITE setCpuThreads NOTIFY configChanged)
+    Q_PROPERTY(bool mertCache READ mertCache WRITE setMertCache NOTIFY configChanged)
+    Q_PROPERTY(bool roformerCache READ roformerCache WRITE setRoformerCache NOTIFY configChanged)
+    Q_PROPERTY(QString mertDevice READ mertDevice WRITE setMertDevice NOTIFY configChanged)
+    Q_PROPERTY(QString cpuPython READ cpuPython WRITE setCpuPython NOTIFY configChanged)
+    Q_PROPERTY(QString cudaPython READ cudaPython WRITE setCudaPython NOTIFY configChanged)
+    Q_PROPERTY(int selectedCandidate READ selectedCandidate NOTIFY ghostStateChanged)
+    Q_PROPERTY(bool skeletonSelection READ skeletonSelection NOTIFY ghostStateChanged)
+    Q_PROPERTY(QString candidateHint READ candidateHint NOTIFY ghostStateChanged)
+    Q_PROPERTY(QString environmentStatus READ environmentStatus NOTIFY configChanged)
+    Q_PROPERTY(bool cpuAvailable READ cpuAvailable NOTIFY configChanged)
+    Q_PROPERTY(bool cudaAvailable READ cudaAvailable NOTIFY configChanged)
+    Q_PROPERTY(QVariantList environments READ environments NOTIFY configChanged)
     // ---- Advanced Sampling & Runtime Controls ----
     Q_PROPERTY(double slideBias READ slideBias WRITE setSlideBias NOTIFY configChanged)
     Q_PROPERTY(int seed READ seed WRITE setSeed NOTIFY configChanged)
@@ -231,6 +249,32 @@ public:
     int streamingBeat() const { return streamingBeat_; }
     int streamingTotalBeats() const { return streamingTotalBeats_; }
 
+    int lineAlignBeats() const { return lineAlignBeats_; }
+    void setLineAlignBeats(int value);
+    int candidateCount() const { return candidateCount_; }
+    void setCandidateCount(int value);
+    int cpuThreads() const { return cpuThreads_; }
+    void setCpuThreads(int value);
+    bool mertCache() const { return mertCache_; }
+    void setMertCache(bool value);
+    bool roformerCache() const { return roformerCache_; }
+    void setRoformerCache(bool value);
+    QString mertDevice() const { return mertDevice_; }
+    void setMertDevice(QString value);
+    QString cpuPython() const { return cpuPython_; }
+    void setCpuPython(QString value);
+    QString cudaPython() const { return cudaPython_; }
+    void setCudaPython(QString value);
+    int selectedCandidate() const { return selected_; }
+    bool skeletonSelection() const { return skeletonSelection_; }
+    QString candidateHint() const;
+    QString environmentStatus() const { return environmentStatus_; }
+    bool cpuAvailable() const { return cpuAvailable_; }
+    bool cudaAvailable() const { return cudaAvailable_; }
+    QVariantList environments() const { return environments_; }
+    Q_INVOKABLE void scanEnvironments(bool discover = true);
+    Q_INVOKABLE void switchCandidate(int direction);
+    Q_INVOKABLE void mouseSkeletonSelection(bool quick);
     // ---- Editor & UI Invokables ----
     Q_INVOKABLE void bindEditor(QObject* editorObject);
     Q_INVOKABLE void notifyEditorCursorOrTextChanged(int cursorPos, int selStart, int selEnd, bool textChanged);
@@ -351,6 +395,44 @@ private:
     miacode::UiRequestService& uiRequests_;
     QPointer<QObject> editorBridge_;
 
+    int lineAlignBeats_ = 4;
+    int candidateCount_ = 3;
+    int cpuThreads_ = 4;
+    bool mertCache_ = true;
+    bool roformerCache_ = true;
+    QString mertDevice_ = QStringLiteral("cpu");
+    QString cpuPython_ = {};
+    QString cudaPython_ = {};
+    struct Candidate {
+        NoaMaterializer writer;
+        QVector<TimelineNoteMarker> markers;
+        TimelineRenderSnapshot timeline;
+        QString previewKey;
+        bool ready = false, previewReady = false;
+        int localIssues = 0;
+        int stepsTaken = 0, left = 0, right = 0, origEnd = 0, cut = 0, bridgeLength = 0;
+        QString remainder, remainingPreview;
+        double startSecond = 0, activeBpm = 120;
+    };
+    QMap<int,Candidate> candidates_;
+    int selected_ = 0, wanted_ = 0, highCandidate_ = 0, scanGeneration_ = 0;
+    bool exhausted_ = false, acceptingStep_ = false, skeletonSelection_ = false;
+    bool cpuAvailable_ = false, cudaAvailable_ = false;
+    QString environmentStatus_;
+    quint64 strikeRevision_ = 0;
+    int strikeLeft_ = -1, strikeRight_ = -1;
+    std::pair<int,int> strikeFrom_, strikeTo_;
+    QVariantList environments_;
+    QJsonObject request_, stepRequest_;
+    QTimer renderTimer_, warmTimer_;
+    void prepareCandidatePreview(Candidate& candidate, const QString& simai);
+    void showCandidate();
+    bool handleStructured(const QJsonObject& message);
+    void discardCandidates();
+    void requestMore();
+    QJsonObject chartRequest() const;
+    void warmSong();
+    bool hasSkeleton(bool selectionOnly) const;
     // ---- Preferences ----
     bool enabled_ = true;
     bool autoContinue_ = true;
@@ -441,7 +523,7 @@ private:
     int streamingBeat_ = 0;
     int streamingTotalBeats_ = 0;
     QTimer streamFlushTimer_;
-    QElapsedTimer lastStreamFlush_;
+    QElapsedTimer lastStreamFlush_, diskFlush_;
     QString pendingStreamChart_;
 };
 
