@@ -678,6 +678,10 @@ foreach ($archiveFormat in $archiveFormats) {
             if ($null -eq $sevenZip) {
                 $sevenZip = Get-Command 7za.exe -ErrorAction SilentlyContinue
             }
+            if ($null -eq $sevenZip -and $env:ProgramFiles) {
+                $installedSevenZip = Join-Path $env:ProgramFiles "7-Zip/7z.exe"
+                $sevenZip = Get-Command -Name $installedSevenZip -ErrorAction SilentlyContinue
+            }
             if ($null -ne $sevenZip) {
                 Push-Location $archiveParentDir
                 try {
