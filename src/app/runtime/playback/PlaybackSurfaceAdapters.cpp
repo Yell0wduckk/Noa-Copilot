@@ -244,6 +244,32 @@ void PlaybackPreviewSurfaceAdapter::restoreAudioSettingsFromSoftwareDefault()
     }
 }
 
+void PlaybackPreviewSurfaceAdapter::setGhostPreviewOverlay(
+    const QVector<TimelineNoteMarker>& ghostMarkers,
+    bool strikeActive,
+    int strikeStartLine,
+    int strikeStartCol,
+    int strikeEndLine,
+    int strikeEndCol)
+{
+    if (coordinator_ != nullptr) {
+        coordinator_->setGhostPreviewOverlay(
+            ghostMarkers,
+            strikeActive,
+            strikeStartLine,
+            strikeStartCol,
+            strikeEndLine,
+            strikeEndCol);
+    }
+}
+
+void PlaybackPreviewSurfaceAdapter::clearGhostPreviewOverlay()
+{
+    if (coordinator_ != nullptr) {
+        coordinator_->clearGhostPreviewOverlay();
+    }
+}
+
 PlaybackTimelineSurfaceAdapter::PlaybackTimelineSurfaceAdapter(PlaybackCoordinator& coordinator)
     : coordinator_(&coordinator)
 {

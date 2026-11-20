@@ -57,6 +57,14 @@ public:
     void applyAudioSettings(const PreviewAudioSettings& settings) override;
     void saveAudioSettingsAsSoftwareDefault() override;
     void restoreAudioSettingsFromSoftwareDefault() override;
+    void setGhostPreviewOverlay(
+        const QVector<TimelineNoteMarker>& ghostMarkers,
+        bool strikeActive,
+        int strikeStartLine,
+        int strikeStartCol,
+        int strikeEndLine,
+        int strikeEndCol) override;
+    void clearGhostPreviewOverlay() override;
 
 private:
     PlaybackCoordinator* coordinator_ = nullptr;

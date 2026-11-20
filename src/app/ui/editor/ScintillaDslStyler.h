@@ -18,6 +18,8 @@ public:
     void follow(bool active, int start, int end);
     bool following() const { return followActive_; }
     void ghostStrike(bool active, int start, int end);
+    void ghostPreview(bool inlineActive, int inlineStart, int inlineEnd,
+                      bool strikeActive, int strikeStart, int strikeEnd);
 private:
     struct LineState { QByteArray text; QByteArray stack; QString bookmark; bool valid = false; QByteArray inputStack; };
     QVector<LineState> lines_;
@@ -26,9 +28,11 @@ private:
     int dirtyThrough_ = 0;
     QVector<AnalysisDecoration> validation_, muri_;
     bool followActive_ = false;
+    bool ghostInlineActive_ = false;
     bool ghostStrikeActive_ = false;
     bool validationDirty_ = true, muriDirty_ = true;
     int followStart_ = 0, followEnd_ = 0;
+    int ghostInlineStart_ = 0, ghostInlineEnd_ = 0;
     int ghostStrikeStart_ = 0, ghostStrikeEnd_ = 0;
     void fill(int indicator, int start, int end);
     ScintillaQuick_item& editor_;

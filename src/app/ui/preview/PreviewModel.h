@@ -95,6 +95,14 @@ public:
     Q_INVOKABLE void beginScrub();
     Q_INVOKABLE void updateScrub(double second);
     Q_INVOKABLE void endScrub(double second);
+    void setGhostPreviewOverlay(
+        const QVector<TimelineNoteMarker>& ghostMarkers,
+        bool strikeActive,
+        int strikeStartLine,
+        int strikeStartCol,
+        int strikeEndLine,
+        int strikeEndCol);
+    void clearGhostPreviewOverlay();
 
 signals:
     void positionChanged();

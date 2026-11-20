@@ -13,8 +13,22 @@ constexpr int muriIndicator = 10;
 constexpr int followIndicator = 11;
 constexpr int ghostStrikeIndicator = 12;
 constexpr int ghostStrikeBackIndicator = 13;
+constexpr int ghostInlineForeIndicator = 14;
+constexpr int ghostInlineBackIndicator = 15;
+constexpr int ghostStrikeForeIndicator = 16;
 constexpr int bookmarkMarker = 1;
 int color(const QVariantMap& palette, const char* key) { return scintillaquick::rgb_from_color(palette.value(QLatin1String(key)).value<QColor>()); }
+int blendedColor(const QVariantMap& palette, const char* fgKey, const char* bgKey, qreal fgWeight)
+{
+    const QColor fg = palette.value(QLatin1String(fgKey)).value<QColor>();
+    const QColor bg = palette.value(QLatin1String(bgKey)).value<QColor>();
+    const qreal w = qBound(0.0, fgWeight, 1.0);
+    const QColor mixed(
+        qRound(fg.red() * w + bg.red() * (1.0 - w)),
+        qRound(fg.green() * w + bg.green() * (1.0 - w)),
+        qRound(fg.blue() * w + bg.blue() * (1.0 - w)));
+    return scintillaquick::rgb_from_color(mixed);
+}
 }
 ScintillaDslStyler::ScintillaDslStyler(ScintillaQuick_item& editor, ScintillaDocumentAdapter& document)
     : editor_(editor), document_(document)
@@ -38,6 +52,11 @@ ScintillaDslStyler::ScintillaDslStyler(ScintillaQuick_item& editor, ScintillaDoc
     editor_.send(SCI_INDICSETSTYLE, ghostStrikeBackIndicator, INDIC_FULLBOX);
     editor_.send(SCI_INDICSETUNDER, ghostStrikeBackIndicator, 1);
     editor_.send(SCI_INDICSETOUTLINEALPHA, ghostStrikeBackIndicator, 0);
+    editor_.send(SCI_INDICSETSTYLE, ghostStrikeForeIndicator, INDIC_TEXTFORE);
+    editor_.send(SCI_INDICSETSTYLE, ghostInlineForeIndicator, INDIC_TEXTFORE);
+    editor_.send(SCI_INDICSETSTYLE, ghostInlineBackIndicator, INDIC_FULLBOX);
+    editor_.send(SCI_INDICSETUNDER, ghostInlineBackIndicator, 1);
+    editor_.send(SCI_INDICSETOUTLINEALPHA, ghostInlineBackIndicator, 0);
     editor_.send(SCI_SETSELECTIONLAYER, SC_LAYER_UNDER_TEXT);
     editor_.send(SCI_SETCARETLINELAYER, SC_LAYER_UNDER_TEXT);
     editor_.send(SCI_SETCARETLINEVISIBLEALWAYS, 1);
@@ -88,9 +107,13 @@ void ScintillaDslStyler::setAppearance(const QFont& font, const QVariantMap& pal
     editor_.send(SCI_INDICSETFORE, muriIndicator, color(palette, "error"));
     editor_.send(SCI_INDICSETFORE, followIndicator, color(palette, "follow"));
     editor_.send(SCI_INDICSETALPHA, followIndicator, qRound(palette.value(QStringLiteral("followOpacity")).toDouble() * 255));
-    editor_.send(SCI_INDICSETFORE, ghostStrikeIndicator, color(palette, "error"));
-    editor_.send(SCI_INDICSETFORE, ghostStrikeBackIndicator, color(palette, "error"));
-    editor_.send(SCI_INDICSETALPHA, ghostStrikeBackIndicator, 34);
+    editor_.send(SCI_INDICSETFORE, ghostStrikeIndicator, blendedColor(palette, "text", "background", 0.56));
+    editor_.send(SCI_INDICSETFORE, ghostStrikeForeIndicator, blendedColor(palette, "text", "background", 0.38));
+    editor_.send(SCI_INDICSETFORE, ghostStrikeBackIndicator, color(palette, "text"));
+    editor_.send(SCI_INDICSETALPHA, ghostStrikeBackIndicator, 16);
+    editor_.send(SCI_INDICSETFORE, ghostInlineForeIndicator, blendedColor(palette, "text", "background", 0.58));
+    editor_.send(SCI_INDICSETFORE, ghostInlineBackIndicator, color(palette, "text"));
+    editor_.send(SCI_INDICSETALPHA, ghostInlineBackIndicator, 28);
 }
 void ScintillaDslStyler::reset()
 {
@@ -101,12 +124,17 @@ void ScintillaDslStyler::reset()
     validation_.clear();
     muri_.clear();
     followActive_ = false;
+    ghostInlineActive_ = false;
+    ghostInlineStart_ = 0;
+    ghostInlineEnd_ = 0;
     ghostStrikeActive_ = false;
     ghostStrikeStart_ = 0;
     ghostStrikeEnd_ = 0;
     validationDirty_ = muriDirty_ = true;
     editor_.send(SCI_MARKERDELETEALL, bookmarkMarker);
-    for (int indicator : {errorIndicator, warningIndicator, muriIndicator, followIndicator, ghostStrikeIndicator, ghostStrikeBackIndicator}) {
+    for (int indicator : {errorIndicator, warningIndicator, muriIndicator, followIndicator,
+                          ghostStrikeIndicator, ghostStrikeBackIndicator, ghostStrikeForeIndicator,
+                          ghostInlineForeIndicator, ghostInlineBackIndicator}) {
         editor_.send(SCI_SETINDICATORCURRENT, indicator);
         editor_.send(SCI_INDICATORCLEARRANGE, 0, editor_.send(SCI_GETLENGTH));
     }
@@ -126,6 +154,7 @@ void ScintillaDslStyler::invalidate(int line, int linesAdded)
     }
     validationDirty_ = muriDirty_ = true;
     followStart_ = -1;
+    ghostInlineStart_ = -1;
     ghostStrikeStart_ = -1;
     if (line < lines_.size()) {
         if (linesAdded > 0) lines_.insert(line + 1, linesAdded, LineState{});
@@ -243,18 +272,40 @@ void ScintillaDslStyler::follow(bool active, int start, int end)
 }
 void ScintillaDslStyler::ghostStrike(bool active, int start, int end)
 {
-    const bool valid = active && end > start;
-    if (valid == ghostStrikeActive_ && (!valid || (start == ghostStrikeStart_ && end == ghostStrikeEnd_))) return;
-    for (int indicator : {ghostStrikeIndicator, ghostStrikeBackIndicator}) {
+    ghostPreview(ghostInlineActive_, ghostInlineStart_, ghostInlineEnd_, active, start, end);
+}
+void ScintillaDslStyler::ghostPreview(
+    bool inlineActive, int inlineStart, int inlineEnd,
+    bool strikeActive, int strikeStart, int strikeEnd)
+{
+    const bool validInline = inlineActive && inlineEnd > inlineStart;
+    const bool validStrike = strikeActive && strikeEnd > strikeStart;
+    const bool inlineUnchanged = (validInline == ghostInlineActive_)
+        && (!validInline || (inlineStart == ghostInlineStart_ && inlineEnd == ghostInlineEnd_));
+    const bool strikeUnchanged = (validStrike == ghostStrikeActive_)
+        && (!validStrike || (strikeStart == ghostStrikeStart_ && strikeEnd == ghostStrikeEnd_));
+    if (inlineUnchanged && strikeUnchanged) return;
+
+    const int docLen = int(editor_.send(SCI_GETLENGTH));
+    for (int indicator : {ghostInlineForeIndicator, ghostInlineBackIndicator,
+                          ghostStrikeIndicator, ghostStrikeForeIndicator, ghostStrikeBackIndicator}) {
         editor_.send(SCI_SETINDICATORCURRENT, indicator);
-        editor_.send(SCI_INDICATORCLEARRANGE, 0, editor_.send(SCI_GETLENGTH));
+        editor_.send(SCI_INDICATORCLEARRANGE, 0, docLen);
     }
-    if (valid) {
-        fill(ghostStrikeBackIndicator, start, end);
-        fill(ghostStrikeIndicator, start, end);
+    if (validInline) {
+        fill(ghostInlineBackIndicator, inlineStart, inlineEnd);
+        fill(ghostInlineForeIndicator, inlineStart, inlineEnd);
     }
-    ghostStrikeActive_ = valid;
-    ghostStrikeStart_ = valid ? start : 0;
-    ghostStrikeEnd_ = valid ? end : 0;
+    if (validStrike) {
+        fill(ghostStrikeBackIndicator, strikeStart, strikeEnd);
+        fill(ghostStrikeForeIndicator, strikeStart, strikeEnd);
+        fill(ghostStrikeIndicator, strikeStart, strikeEnd);
+    }
+    ghostInlineActive_ = validInline;
+    ghostInlineStart_ = validInline ? inlineStart : 0;
+    ghostInlineEnd_ = validInline ? inlineEnd : 0;
+    ghostStrikeActive_ = validStrike;
+    ghostStrikeStart_ = validStrike ? strikeStart : 0;
+    ghostStrikeEnd_ = validStrike ? strikeEnd : 0;
 }
 }

@@ -231,7 +231,7 @@ Item {
                 AppButton {
                     Layout.fillWidth: true
                     implicitHeight: Theme.compactControlHeight + 2
-                    text: "续写 (Alt+\\)"
+                    text: "续写 (Tab)"
                     enabled: root.noaCopilot ? (root.noaCopilot.enabled && !root.noaCopilot.busy) : false
                     onClicked: {
                         statusPopup.close()

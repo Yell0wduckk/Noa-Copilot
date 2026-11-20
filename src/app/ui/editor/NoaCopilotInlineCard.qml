@@ -17,10 +17,17 @@ Item {
     property bool advancedExpanded: false
 
     readonly property rect caretRect: root.editor ? root.editor.cursorRectangle : Qt.rect(24, 24, 2, 18)
-    readonly property real cardX: Math.max(12, Math.min(Math.round(root.caretRect.x),
+    readonly property rect anchorStartRect: (root.noaCopilot && root.noaCopilot.pendingRangeActive && root.editor && root.editor.inlineGhostActive)
+        ? root.editor.ghostStartRectangle
+        : root.caretRect
+    readonly property rect anchorEndRect: (root.noaCopilot && root.noaCopilot.pendingRangeActive && root.editor && root.editor.inlineGhostActive)
+        ? root.editor.ghostEndRectangle
+        : root.caretRect
+    readonly property real cardX: Math.max(12, Math.min(Math.round(root.anchorStartRect.x),
         Math.max(12, root.width - cardContainer.width - 20)))
-    readonly property real belowY: Math.round(root.caretRect.y + root.caretRect.height + 6)
-    readonly property real aboveY: Math.round(root.caretRect.y - cardContainer.height - 6)
+    readonly property real belowY: Math.round(Math.max(root.caretRect.y + root.caretRect.height,
+        root.anchorEndRect.y + root.anchorEndRect.height) + 6)
+    readonly property real aboveY: Math.round(Math.min(root.caretRect.y, root.anchorStartRect.y) - cardContainer.height - 6)
     readonly property real cardY: (belowY + cardContainer.height <= root.height - 8 || aboveY < 8)
         ? Math.max(8, belowY)
         : Math.max(8, aboveY)
@@ -237,9 +244,15 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: root.noaCopilot
-                            ? ("候选段落已就绪 · " + root.noaCopilot.pendingRangeNoteCount + " 音符")
-                            : ""
+                        text: {
+                            if (!root.noaCopilot) return ""
+                            if (root.noaCopilot.rangeStreaming) {
+                                return root.noaCopilot.fullStreamingTotalBeats > 0
+                                    ? ("正在流式生成段落... (" + root.noaCopilot.fullStreamingBeat + "/" + root.noaCopilot.fullStreamingTotalBeats + " 拍)")
+                                    : "正在流式生成段落..."
+                            }
+                            return "候选段落已就绪 · " + root.noaCopilot.pendingRangeNoteCount + " 音符"
+                        }
                         font.family: Theme.uiFont
                         font.pixelSize: Theme.uiFontSize
                         font.weight: Font.DemiBold
@@ -255,6 +268,7 @@ Item {
                         emphasized: true
                         Layout.fillWidth: true
                         implicitHeight: Theme.compactControlHeight + 4
+                        enabled: root.noaCopilot ? !root.noaCopilot.rangeStreaming : false
                         text: "接受 (Tab)"
                         onClicked: {
                             if (root.noaCopilot)
@@ -267,7 +281,7 @@ Item {
                     AppButton {
                         Layout.fillWidth: true
                         implicitHeight: Theme.compactControlHeight + 4
-                        enabled: root.noaCopilot ? !root.noaCopilot.busy : false
+                        enabled: root.noaCopilot ? (!root.noaCopilot.busy && !root.noaCopilot.rangeStreaming) : false
                         text: "重抽 (R)"
                         onClicked: if (root.noaCopilot) root.noaCopilot.regeneratePendingRange()
                     }
@@ -275,6 +289,7 @@ Item {
                     AppButton {
                         Layout.fillWidth: true
                         implicitHeight: Theme.compactControlHeight + 4
+                        enabled: root.noaCopilot ? !root.noaCopilot.rangeStreaming : false
                         text: "试听 (Space)"
                         onClicked: if (root.noaCopilot) root.noaCopilot.auditionPendingRange()
                     }
@@ -282,10 +297,13 @@ Item {
                     AppButton {
                         Layout.fillWidth: true
                         implicitHeight: Theme.compactControlHeight + 4
-                        text: "放弃 (Esc)"
+                        text: root.noaCopilot && root.noaCopilot.rangeStreaming ? "停止 (Esc)" : "放弃 (Esc)"
                         onClicked: {
-                            if (root.noaCopilot)
+                            if (root.noaCopilot) {
+                                if (root.noaCopilot.rangeStreaming)
+                                    root.noaCopilot.cancelActiveGeneration()
                                 root.noaCopilot.rejectPendingRange()
+                            }
                             if (root.editor)
                                 root.editor.forceActiveFocus()
                         }

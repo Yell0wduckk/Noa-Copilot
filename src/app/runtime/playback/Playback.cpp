@@ -329,10 +329,10 @@ void miacode::runtime::PlaybackCoordinator::applyPreviewPlaybackRate(double rate
             miacode::oplog::appendStartupBeaconLine("ui/rate/bass_paused_returned");
             if (!state_.previewStartupSyncPending_
                 && !state_.previewLateVideoStartPending_
-                && !state_.timeline_.latestTimelineNoteMarkers_.isEmpty()) {
+                && (!state_.timeline_.latestTimelineNoteMarkers_.isEmpty() || !ghostPreviewMarkers_.isEmpty())) {
                 miacode::oplog::appendStartupBeaconLine("ui/rate/bass_apply_paused_about_to_call");
                 state_.previewSfxRuntime_->applyPausedPreviewState(
-                    state_.timeline_.latestTimelineNoteMarkers_,
+                    effectiveSfxNoteMarkers(),
                     false,
                     state_.pauseSecond_,
                     state_.previewPlaybackRate_,
@@ -457,7 +457,7 @@ bool miacode::runtime::PlaybackCoordinator::startQtPreviewPlayback(double second
     }
     const double startSecond = (!resumeFromPause && requestedSecond <= kTimelineZeroSecondTolerance)
         ? previewVisualLeadInStartSecond(
-              state_.timeline_.latestTimelineNoteMarkers_,
+              effectiveSfxNoteMarkers(),
               requestedSecond,
               state_.previewTapFlowSpeed_,
               state_.previewTouchFlowSpeed_)

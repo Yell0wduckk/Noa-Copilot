@@ -171,7 +171,13 @@ void TimelineQuickStateBridge::bumpOverlayDynamicRevision()
 void TimelineQuickStateBridge::clear()
 {
     snapshot_ = TimelineRenderSnapshot();
+    filteredSnapshot_ = TimelineRenderSnapshot();
     ghostSnapshot_ = TimelineRenderSnapshot();
+    ghostStrikeActive_ = false;
+    ghostStrikeStartLine_ = 0;
+    ghostStrikeStartCol_ = 0;
+    ghostStrikeEndLine_ = 0;
+    ghostStrikeEndCol_ = 0;
     ++ghostNotesRevision_;
     waveformData_.reset();
     muriMarkersByLocation_.clear();
@@ -187,9 +193,36 @@ void TimelineQuickStateBridge::clear()
     emit renderStateChanged();
 }
 
+void TimelineQuickStateBridge::rebuildFilteredSnapshot()
+{
+    if (!ghostStrikeActive_ || ghostStrikeEndLine_ <= 0) {
+        filteredSnapshot_ = TimelineRenderSnapshot();
+        return;
+    }
+    filteredSnapshot_ = snapshot_;
+    for (TimelineRenderLine& line : filteredSnapshot_.lines) {
+        if (line.lineNumber < ghostStrikeStartLine_ || line.lineNumber > ghostStrikeEndLine_) {
+            continue;
+        }
+        QVector<TimelineRenderNote> kept;
+        kept.reserve(line.notes.size());
+        for (const TimelineRenderNote& note : line.notes) {
+            const bool afterStart = (line.lineNumber > ghostStrikeStartLine_)
+                || (line.lineNumber == ghostStrikeStartLine_ && note.sourceCol >= ghostStrikeStartCol_);
+            const bool beforeEnd = (line.lineNumber < ghostStrikeEndLine_)
+                || (line.lineNumber == ghostStrikeEndLine_ && note.sourceCol < ghostStrikeEndCol_);
+            if (!(afterStart && beforeEnd)) {
+                kept.append(note);
+            }
+        }
+        line.notes = std::move(kept);
+    }
+}
+
 void TimelineQuickStateBridge::setTimelineData(const TimelineRenderSnapshot& snapshot)
 {
     snapshot_ = snapshot;
+    rebuildFilteredSnapshot();
     refreshLayoutMetrics();
     bumpAllRevisions();
     emit renderStateChanged();
@@ -212,7 +245,7 @@ void TimelineQuickStateBridge::replaceTimelineData(
 
 const TimelineRenderSnapshot& TimelineQuickStateBridge::renderSnapshot() const
 {
-    return snapshot_;
+    return ghostStrikeActive_ ? filteredSnapshot_ : snapshot_;
 }
 
 void TimelineQuickStateBridge::setGhostSnapshot(const TimelineRenderSnapshot& snapshot)
@@ -228,6 +261,31 @@ void TimelineQuickStateBridge::setGhostSnapshot(const TimelineRenderSnapshot& sn
 const TimelineRenderSnapshot& TimelineQuickStateBridge::ghostSnapshot() const
 {
     return ghostSnapshot_;
+}
+
+void TimelineQuickStateBridge::setGhostStrikeRange(
+    bool active, int startLine, int startCol, int endLine, int endCol)
+{
+    const bool valid = active && endLine > 0;
+    const int nsl = valid ? startLine : 0;
+    const int nsc = valid ? startCol : 0;
+    const int nel = valid ? endLine : 0;
+    const int nec = valid ? endCol : 0;
+    if (ghostStrikeActive_ == valid
+        && ghostStrikeStartLine_ == nsl
+        && ghostStrikeStartCol_ == nsc
+        && ghostStrikeEndLine_ == nel
+        && ghostStrikeEndCol_ == nec) {
+        return;
+    }
+    ghostStrikeActive_ = valid;
+    ghostStrikeStartLine_ = nsl;
+    ghostStrikeStartCol_ = nsc;
+    ghostStrikeEndLine_ = nel;
+    ghostStrikeEndCol_ = nec;
+    rebuildFilteredSnapshot();
+    bumpNotesRevision();
+    emit renderStateChanged();
 }
 
 void TimelineQuickStateBridge::setWaveformData(

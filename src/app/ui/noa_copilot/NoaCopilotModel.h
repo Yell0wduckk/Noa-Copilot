@@ -82,6 +82,7 @@ class NoaCopilotModel final : public QObject
 
     // ---- Workflow 1: Inline Ghost State ----
     Q_PROPERTY(bool ghostActive READ ghostActive NOTIFY ghostStateChanged)
+    Q_PROPERTY(bool ghostStreaming READ ghostStreaming NOTIFY ghostStateChanged)
     Q_PROPERTY(QString ghostText READ ghostText NOTIFY ghostStateChanged)
     Q_PROPERTY(QString ghostFirstLine READ ghostFirstLine NOTIFY ghostStateChanged)
     Q_PROPERTY(QString ghostExtraLines READ ghostExtraLines NOTIFY ghostStateChanged)
@@ -97,6 +98,7 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QString inlineLevelOverride READ inlineLevelOverride WRITE setInlineLevelOverride NOTIFY inlineCardChanged)
     Q_PROPERTY(QString inlineDesignerOverride READ inlineDesignerOverride WRITE setInlineDesignerOverride NOTIFY inlineCardChanged)
     Q_PROPERTY(bool pendingRangeActive READ pendingRangeActive NOTIFY pendingRangeChanged)
+    Q_PROPERTY(bool rangeStreaming READ rangeStreaming NOTIFY pendingRangeChanged)
     Q_PROPERTY(QString pendingRangeText READ pendingRangeText NOTIFY pendingRangeChanged)
     Q_PROPERTY(int pendingReplaceStart READ pendingReplaceStart NOTIFY pendingRangeChanged)
     Q_PROPERTY(int pendingReplaceEnd READ pendingReplaceEnd NOTIFY pendingRangeChanged)
@@ -194,6 +196,7 @@ public:
     QString audioCacheSizeText() const { return audioCacheSizeText_; }
 
     bool ghostActive() const { return ghostActive_; }
+    bool ghostStreaming() const { return ghostStreaming_; }
     QString ghostText() const { return ghostText_; }
     QString ghostFirstLine() const { return ghostFirstLine_; }
     QString ghostExtraLines() const { return ghostExtraLines_; }
@@ -214,6 +217,7 @@ public:
     void setInlineDesignerOverride(const QString& designer);
 
     bool pendingRangeActive() const { return pendingRangeActive_; }
+    bool rangeStreaming() const { return rangeStreaming_; }
     QString pendingRangeText() const { return pendingRangeText_; }
     int pendingReplaceStart() const { return pendingReplaceStart_; }
     int pendingReplaceEnd() const { return pendingReplaceEnd_; }
@@ -246,6 +250,7 @@ public:
     Q_INVOKABLE bool acceptNextGhostStep();
     Q_INVOKABLE bool acceptGhostNextStep() { return acceptNextGhostStep(); }
     Q_INVOKABLE void dismissGhost();
+    Q_INVOKABLE void dismissAllActivePreviews();
 
     Q_INVOKABLE void openInlineCard();
     Q_INVOKABLE void closeInlineCard();
@@ -329,7 +334,9 @@ private:
     void applyDualSurfaceGhostPreview(
         const QString& ghostSimai,
         double startSecond,
-        double activeBpm);
+        double activeBpm,
+        int strikeStartUtf16 = 0,
+        int strikeEndUtf16 = 0);
     void clearDualSurfaceGhostPreview();
     bool applyEditorReplacement(int startPos, int endPos, const QString& text, int newCursorPos = -1);
 
@@ -395,6 +402,8 @@ private:
 
     // ---- Ghost State ----
     bool ghostActive_ = false;
+    bool ghostStreaming_ = false;
+    bool pendingAcceptAfterStream_ = false;
     QString ghostText_;
     QString ghostFirstLine_;
     QString ghostExtraLines_;
@@ -413,6 +422,7 @@ private:
     QString inlineLevelOverride_;
     QString inlineDesignerOverride_;
     bool pendingRangeActive_ = false;
+    bool rangeStreaming_ = false;
     QString pendingRangeText_;
     int pendingReplaceStart_ = 0;
     int pendingReplaceEnd_ = 0;

@@ -43,6 +43,10 @@ class ScintillaEditorBridge : public ScintillaQuick_item
     Q_PROPERTY(QRectF currentLineRectangle READ currentLineRectangle NOTIFY currentLineRectangleChanged)
     Q_PROPERTY(QRectF followCursorRectangle READ followCursorRectangle NOTIFY followVisualChanged)
     Q_PROPERTY(bool followCaretVisible READ followCaretVisible NOTIFY followVisualChanged)
+    Q_PROPERTY(bool inlineGhostActive READ inlineGhostActive NOTIFY inlineGhostVisualChanged)
+    Q_PROPERTY(bool updatingInlineGhost READ updatingInlineGhost CONSTANT)
+    Q_PROPERTY(QRectF ghostStartRectangle READ ghostStartRectangle NOTIFY inlineGhostVisualChanged)
+    Q_PROPERTY(QRectF ghostEndRectangle READ ghostEndRectangle NOTIFY inlineGhostVisualChanged)
     Q_PROPERTY(int cursorLine READ cursorLine NOTIFY selectionChanged)
     Q_PROPERTY(int cursorColumn READ cursorColumn NOTIFY selectionChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY availabilityChanged)
@@ -85,11 +89,15 @@ public:
     int selectionStart() const;
     int selectionEnd() const;
     QString selectedText() const;
-    QString editorText() const { return document_.text(); }
+    QString editorText() const;
     QRectF cursorRectangle() const;
     QRectF currentLineRectangle() const { return currentLineRectangle_; }
     QRectF followCursorRectangle() const;
     bool followCaretVisible() const;
+    bool inlineGhostActive() const { return inlineGhostActive_; }
+    bool updatingInlineGhost() const { return updatingInlineGhost_; }
+    QRectF ghostStartRectangle() const { return ghostStartRectangle_; }
+    QRectF ghostEndRectangle() const { return ghostEndRectangle_; }
     int cursorLine() const;
     int cursorColumn() const;
     bool canUndo() const { return send(SCI_CANUNDO); }
@@ -127,10 +135,12 @@ public:
     Q_INVOKABLE bool deleteBookmarkAtLine(int line);
     Q_INVOKABLE bool replaceTextRange(int startPos, int endPos, const QString& replacementText, int newCursorPos = -1);
     Q_INVOKABLE void setGhostStrikeRange(bool active, int startPos, int endPos);
+    Q_INVOKABLE void setInlineGhostPreview(bool active, int insertPos, const QString& ghostText, int strikeStart, int strikeEnd);
 signals:
     void bindingsChanged();
     void inlineCopilotRequested();
     void manualGhostRequested();
+    void inlineGhostVisualChanged();
     void editorColorsChanged();
     void appearanceChanged();
     void layoutChanged();
@@ -185,6 +195,10 @@ private:
     void touchAuthoring(const QString& pad, QChar separator, int difficulty, qulonglong revision, int anchor, int position);
     void beginUserInteraction();
     void publishTouchUndoAnchor();
+    int visualToRealPosition(int visualPos) const;
+    int realToVisualPosition(int realPos, bool afterGhost = false) const;
+    void clearInlineGhostVisualOnly();
+    void dismissInlineGhostBeforeUserAction();
     ScintillaDocumentAdapter document_;
     ScintillaDslStyler styler_;
     QPointer<DocumentModel> documentSession_;
@@ -251,5 +265,14 @@ private:
     int nextTouchToken_ = 1;
     int pendingTouchAnchor_ = -1;
     QPointer<QObject> noaCopilot_;
+    bool inlineGhostActive_ = false;
+    bool updatingInlineGhost_ = false;
+    int inlineGhostStart_ = 0;
+    int inlineGhostLength_ = 0;
+    int inlineGhostStrikeStart_ = 0;
+    int inlineGhostStrikeEnd_ = 0;
+    QString inlineGhostText_;
+    QRectF ghostStartRectangle_;
+    QRectF ghostEndRectangle_;
 };
 }

@@ -414,4 +414,30 @@ void PreviewModel::updateScrub(double second) { playbackControl()->updateScrub(s
 
 void PreviewModel::endScrub(double second) { playbackControl()->endScrub(second); }
 
+void PreviewModel::setGhostPreviewOverlay(
+    const QVector<TimelineNoteMarker>& ghostMarkers,
+    bool strikeActive,
+    int strikeStartLine,
+    int strikeStartCol,
+    int strikeEndLine,
+    int strikeEndCol)
+{
+    if (surface() != nullptr) {
+        surface()->setGhostPreviewOverlay(
+            ghostMarkers,
+            strikeActive,
+            strikeStartLine,
+            strikeStartCol,
+            strikeEndLine,
+            strikeEndCol);
+    }
+}
+
+void PreviewModel::clearGhostPreviewOverlay()
+{
+    if (surface() != nullptr) {
+        surface()->clearGhostPreviewOverlay();
+    }
+}
+
 } // namespace miacode::ui

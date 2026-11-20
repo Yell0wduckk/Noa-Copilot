@@ -18,7 +18,7 @@ Rectangle {
             root.noaCopilot.bindEditor(sourceArea)
     }
     function notifyNoaCopilotState() {
-        if (!root.noaCopilot)
+        if (!root.noaCopilot || sourceArea.updatingInlineGhost)
             return
         root.noaCopilot.notifyEditorCursorOrTextChanged(
             sourceArea.cursorPosition,
@@ -322,7 +322,7 @@ Rectangle {
                 rows.push({ kind: "submenu", labelKey: "action.transform.more", operation: "" })
             if (root.noaCopilot && root.noaCopilot.enabled && !sourceArea.readonly) {
                 separator()
-                action("NoaCopilot: 续写当前拍 (Alt+\\)", "noa_continue")
+                action("NoaCopilot: 续写当前拍 (Tab)", "noa_continue")
                 action("NoaCopilot: 段落生成 (Ctrl+K)", "noa_inline")
                 action("NoaCopilot: 生成整曲初稿", "noa_full")
             }

@@ -53,6 +53,7 @@ public:
     const TimelineRenderSnapshot& renderSnapshot() const;
     void setGhostSnapshot(const TimelineRenderSnapshot& snapshot);
     const TimelineRenderSnapshot& ghostSnapshot() const;
+    void setGhostStrikeRange(bool active, int startLine, int startCol, int endLine, int endCol);
     void setWaveformData(const std::shared_ptr<const miacode::waveform::WaveformData>& waveformData);
     std::shared_ptr<const miacode::waveform::WaveformData> waveformData() const;
     void setMuriAnalysisReport(const MuriAnalysisReport& report);
@@ -165,9 +166,16 @@ private:
     void bumpNotesRevision();
     void bumpOverlayRevision();
     void bumpOverlayDynamicRevision();
+    void rebuildFilteredSnapshot();
 
     TimelineRenderSnapshot snapshot_;
+    TimelineRenderSnapshot filteredSnapshot_;
     TimelineRenderSnapshot ghostSnapshot_;
+    bool ghostStrikeActive_ = false;
+    int ghostStrikeStartLine_ = 0;
+    int ghostStrikeStartCol_ = 0;
+    int ghostStrikeEndLine_ = 0;
+    int ghostStrikeEndCol_ = 0;
     std::shared_ptr<const miacode::waveform::WaveformData> waveformData_;
     QHash<quint64, QVector<miacode::timeline::TimelineMuriMarkerPlacement>> muriMarkersByLocation_;
     QHash<quint64, QString> muriMarkerTooltips_;

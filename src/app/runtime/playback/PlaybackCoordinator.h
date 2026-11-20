@@ -323,6 +323,14 @@ public:
     void applyAudioSettings(const PreviewAudioSettings& settings);
     void saveAudioSettingsAsSoftwareDefault();
     void restoreAudioSettingsFromSoftwareDefault();
+    void setGhostPreviewOverlay(
+        const QVector<TimelineNoteMarker>& ghostMarkers,
+        bool strikeActive,
+        int strikeStartLine,
+        int strikeStartCol,
+        int strikeEndLine,
+        int strikeEndCol);
+    void clearGhostPreviewOverlay();
 
     QObject* timelineStateBridge() const;
     void noteTimelineSurfaceReady();
@@ -401,6 +409,9 @@ private:
     bool ensureAuditionSceneReady();
     miacode::waveform::WaveformCacheService* ensureWaveformCacheService();
     void clearPreviewFollowDecoration();
+    QVector<TimelineNoteMarker> effectiveNormalNoteMarkers() const;
+    QVector<TimelineNoteMarker> effectiveSfxNoteMarkers() const;
+    void pushEffectivePreviewAndSfxState(bool forceUpdate = true);
     // Timer/connection parent and QPointer-tracked liveness anchor only — see
     // the class comment above. Production passes the owning Session.
     QObject& owner_;
@@ -418,6 +429,12 @@ private:
     PlaybackIdentityGate identity_;
     double rangePlaybackStartSeconds_ = 0.0;
     double rangePlaybackEndSeconds_ = 0.0;
+    QVector<TimelineNoteMarker> ghostPreviewMarkers_;
+    bool ghostStrikeActive_ = false;
+    int ghostStrikeStartLine_ = 0;
+    int ghostStrikeStartCol_ = 0;
+    int ghostStrikeEndLine_ = 0;
+    int ghostStrikeEndCol_ = 0;
 
     bool beginPlaybackCommand();
 };

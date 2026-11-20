@@ -125,12 +125,14 @@ void ScintillaEditorBridge::updatePolish()
     bool applied = false;
     if (navigation) {
         const auto& request = *navigation;
+        const int realLen = int(document_.text().size()) - (inlineGhostActive_ ? inlineGhostLength_ : 0);
         applied = navigationVisible_ && documentSession_ && !imeComposing_
             && request.difficulty == documentSession_->currentDifficultyId()
             && request.revision == documentSession_->documentRevision()
             && request.generation == documentSession_->documentOpenGeneration()
-            && request.start >= 0 && request.end >= request.start && request.end <= document_.text().size();
+            && request.start >= 0 && request.end >= request.start && request.end <= realLen;
         if (applied) {
+            clearInlineGhostVisualOnly();
             QScopedValueRollback guard(programmatic_, true);
             select(request.start, request.end);
             if (request.focus) forceActiveFocus();
@@ -207,26 +209,48 @@ void ScintillaEditorBridge::publishLayout()
                 .arg(window() ? int(window()->rendererInterface()->graphicsApi()) : -1));
     }
 
-    const QRectF cursor = positionToRectangle(cursorPosition());
+    const QRectF cursor = positionToRectangle(document_.utf16Position(send(SCI_GETCURRENTPOS)));
     const int currentLine = send(SCI_LINEFROMPOSITION, send(SCI_GETCURRENTPOS));
     QRectF currentLineRect = positionToRectangle(
         document_.utf16Position(send(SCI_POSITIONFROMLINE, currentLine)));
     currentLineRect.setHeight(qMax(1, int(send(SCI_WRAPCOUNT, currentLine))) * height);
     const QRectF anchor = positionToRectangle(document_.utf16Position(send(SCI_GETANCHOR)));
     const QRectF follow = styler_.following() ? positionToRectangle(followCaretPosition_) : QRectF{};
+    QRectF nextGhostStartRect = cursor;
+    QRectF nextGhostEndRect = cursor;
+    if (inlineGhostActive_) {
+        const QString& raw = document_.text();
+        const int rawLen = int(raw.size());
+        int visStart = qBound(0, inlineGhostStart_, rawLen);
+        int visEnd = (inlineGhostStrikeEnd_ > inlineGhostStrikeStart_)
+            ? realToVisualPosition(inlineGhostStrikeEnd_, true)
+            : (inlineGhostStart_ + inlineGhostLength_);
+        visEnd = qBound(visStart, visEnd, rawLen);
+        while (visStart < visEnd && (raw.at(visStart) == QLatin1Char('\n') || raw.at(visStart) == QLatin1Char('\r')))
+            ++visStart;
+        int visLast = visEnd;
+        while (visLast > visStart && (raw.at(visLast - 1) == QLatin1Char('\n') || raw.at(visLast - 1) == QLatin1Char('\r')))
+            --visLast;
+        nextGhostStartRect = positionToRectangle(visStart);
+        nextGhostEndRect = positionToRectangle(visLast);
+    }
     const bool cursorChanged = cursorRectangle_ != cursor;
     const bool currentLineChanged = currentLineRectangle_ != currentLineRect;
     const bool anchorChanged = anchorRectangle_ != anchor;
     const bool followChanged = followCursorRectangle_ != follow;
+    const bool ghostRectChanged = ghostStartRectangle_ != nextGhostStartRect || ghostEndRectangle_ != nextGhostEndRect;
     cursorRectangle_ = cursor;
     currentLineRectangle_ = currentLineRect;
     anchorRectangle_ = anchor;
     followCursorRectangle_ = follow;
+    ghostStartRectangle_ = nextGhostStartRect;
+    ghostEndRectangle_ = nextGhostEndRect;
     if (metricsChanged) emit layoutChanged();
     if (metricsChanged) scheduleOverviewProjectionRefresh(OverviewAllDirty);
     if (cursorChanged) emit cursorRectangleChanged();
     if (currentLineChanged) emit currentLineRectangleChanged();
     if (followChanged) emit followVisualChanged();
+    if (ghostRectChanged) emit inlineGhostVisualChanged();
     if (hasActiveFocus() && (metricsChanged || cursorChanged || anchorChanged))
         QGuiApplication::inputMethod()->update(Qt::ImCursorRectangle | Qt::ImAnchorRectangle);
 }
@@ -339,11 +363,37 @@ void ScintillaEditorBridge::setScrollPastEnd(bool value)
     emit appearanceChanged();
     scheduleOverviewProjectionRefresh(OverviewCurrentLineDirty);
 }
-int ScintillaEditorBridge::cursorPosition() const { return document_.utf16Position(send(SCI_GETCURRENTPOS)); }
+int ScintillaEditorBridge::visualToRealPosition(int visualPos) const
+{
+    if (!inlineGhostActive_ || inlineGhostLength_ <= 0) return visualPos;
+    if (visualPos <= inlineGhostStart_) return visualPos;
+    if (visualPos <= inlineGhostStart_ + inlineGhostLength_) return inlineGhostStart_;
+    return visualPos - inlineGhostLength_;
+}
+int ScintillaEditorBridge::realToVisualPosition(int realPos, bool afterGhost) const
+{
+    if (!inlineGhostActive_ || inlineGhostLength_ <= 0) return realPos;
+    if (realPos > inlineGhostStart_ || (afterGhost && realPos == inlineGhostStart_))
+        return realPos + inlineGhostLength_;
+    return realPos;
+}
+int ScintillaEditorBridge::cursorPosition() const { return visualToRealPosition(document_.utf16Position(send(SCI_GETCURRENTPOS))); }
 void ScintillaEditorBridge::setCursorPosition(int value) { select(value, value); }
-int ScintillaEditorBridge::selectionStart() const { return document_.utf16Position(send(SCI_GETSELECTIONSTART)); }
-int ScintillaEditorBridge::selectionEnd() const { return document_.utf16Position(send(SCI_GETSELECTIONEND)); }
-QString ScintillaEditorBridge::selectedText() const { return document_.text().mid(selectionStart(), selectionEnd() - selectionStart()); }
+int ScintillaEditorBridge::selectionStart() const { return visualToRealPosition(document_.utf16Position(send(SCI_GETSELECTIONSTART))); }
+int ScintillaEditorBridge::selectionEnd() const { return visualToRealPosition(document_.utf16Position(send(SCI_GETSELECTIONEND))); }
+QString ScintillaEditorBridge::editorText() const
+{
+    const QString& raw = document_.text();
+    if (!inlineGhostActive_ || inlineGhostLength_ <= 0) return raw;
+    const int start = qBound(0, inlineGhostStart_, int(raw.size()));
+    const int len = qBound(0, inlineGhostLength_, int(raw.size()) - start);
+    QString real;
+    real.reserve(raw.size() - len);
+    real.append(QStringView(raw).left(start));
+    real.append(QStringView(raw).mid(start + len));
+    return real;
+}
+QString ScintillaEditorBridge::selectedText() const { return editorText().mid(selectionStart(), selectionEnd() - selectionStart()); }
 QRectF ScintillaEditorBridge::positionToRectangle(int position) const
 {
     const int byte = document_.bytePosition(position);
@@ -353,11 +403,11 @@ QRectF ScintillaEditorBridge::positionToRectangle(int position) const
 QRectF ScintillaEditorBridge::cursorRectangle() const { return cursorRectangle_; }
 int ScintillaEditorBridge::positionAt(qreal x, qreal y) const
 {
-    return document_.utf16Position(send(SCI_POSITIONFROMPOINT, qRound(x), qRound(y)));
+    return visualToRealPosition(document_.utf16Position(send(SCI_POSITIONFROMPOINT, qRound(x), qRound(y))));
 }
 QRectF ScintillaEditorBridge::textPositionRectangle(int position) const
 {
-    return positionToRectangle(position);
+    return positionToRectangle(realToVisualPosition(position, false));
 }
 QRectF ScintillaEditorBridge::lineRectangle(int line) const
 {
@@ -386,11 +436,12 @@ int ScintillaEditorBridge::cursorColumn() const
 void ScintillaEditorBridge::synchronizeDocument()
 {
     if (!ready_ || !documentSession_ || synchronizing_ || handlingIme_) return;
-    QScopedValueRollback guard(synchronizing_, true);
     const auto generation = documentSession_->documentOpenGeneration();
     const QString scope = QStringLiteral("difficulty:%1").arg(documentSession_->currentDifficultyId());
     const bool identityChanged = generation_ != generation || scope != document_.scope();
     if (!identityChanged && synchronizedRevision_ == documentSession_->documentRevision()) return;
+    clearInlineGhostVisualOnly();
+    QScopedValueRollback guard(synchronizing_, true);
     if (controller_ && (identityChanged || document_.text() != documentSession_->chartText()))
         controller_->closeCompletion();
     if (imeComposing_ && !identityChanged) { refreshDiagnostics(); return; }
@@ -462,6 +513,7 @@ void ScintillaEditorBridge::refreshDecorations()
 }
 void ScintillaEditorBridge::refreshDiagnostics()
 {
+    if (inlineGhostActive_) return;
     const qulonglong generation = documentSession_
         ? documentSession_->documentOpenGeneration() : ~qulonglong(0);
     const int difficulty = documentSession_ ? documentSession_->currentDifficultyId() : -1;
@@ -730,6 +782,7 @@ void ScintillaEditorBridge::touchAuthoring(const QString& pad, QChar separator, 
 {
     if (!documentSession_ || !controller_ || imeComposing_ || difficulty != documentSession_->currentDifficultyId()
         || revision != documentSession_->documentRevision()) return;
+    dismissInlineGhostBeforeUserAction();
     QScopedValueRollback guard(programmatic_, true);
     const auto tx = controller_->touchPadAuthoring(document_.text(), anchor, position, pad, separator);
     if (applyEditorTransaction(tx)) {
@@ -739,6 +792,7 @@ void ScintillaEditorBridge::touchAuthoring(const QString& pad, QChar separator, 
 }
 void ScintillaEditorBridge::undo()
 {
+    dismissInlineGhostBeforeUserAction();
     QGuiApplication::inputMethod()->commit();
     if (controller_) controller_->closeCompletion();
     send(SCI_UNDO);
@@ -746,6 +800,7 @@ void ScintillaEditorBridge::undo()
 }
 void ScintillaEditorBridge::redo()
 {
+    dismissInlineGhostBeforeUserAction();
     QGuiApplication::inputMethod()->commit();
     if (controller_) controller_->closeCompletion();
     send(SCI_REDO);
@@ -764,22 +819,25 @@ void ScintillaEditorBridge::publishTouchUndoAnchor()
         publishTouchAnchor(pendingTouchAnchor_);
     pendingTouchAnchor_ = -1;
 }
-void ScintillaEditorBridge::cut() { send(SCI_CUT); }
-void ScintillaEditorBridge::copy() { send(SCI_COPY); }
-void ScintillaEditorBridge::paste() { send(SCI_PASTE); }
-void ScintillaEditorBridge::selectAll() { send(SCI_SELECTALL); refreshSelection(true); }
+void ScintillaEditorBridge::cut() { dismissInlineGhostBeforeUserAction(); send(SCI_CUT); }
+void ScintillaEditorBridge::copy() { if (inlineGhostActive_) dismissInlineGhostBeforeUserAction(); send(SCI_COPY); }
+void ScintillaEditorBridge::paste() { dismissInlineGhostBeforeUserAction(); send(SCI_PASTE); }
+void ScintillaEditorBridge::selectAll() { dismissInlineGhostBeforeUserAction(); send(SCI_SELECTALL); refreshSelection(true); }
 void ScintillaEditorBridge::select(int anchor, int position)
 {
+    if (inlineGhostActive_ && !updatingInlineGhost_ && !synchronizing_) clearInlineGhostVisualOnly();
     send(SCI_SETSELECTION, document_.bytePosition(position), document_.bytePosition(anchor));
     refreshSelection(!programmatic_);
 }
 void ScintillaEditorBridge::selectCurrentLine()
 {
+    dismissInlineGhostBeforeUserAction();
     const int line = cursorLine() - 1;
     select(document_.utf16Position(send(SCI_POSITIONFROMLINE, line)), document_.utf16Position(send(SCI_GETLINEENDPOSITION, line)));
 }
 void ScintillaEditorBridge::jumpToLine(int line)
 {
+    dismissInlineGhostBeforeUserAction();
     const int position = document_.utf16Position(send(SCI_POSITIONFROMLINE, qBound(0, line - 1, int(send(SCI_GETLINECOUNT)) - 1)));
     setCursorPosition(position);
     centerCursorInView();
@@ -792,6 +850,7 @@ bool ScintillaEditorBridge::applyEditorTransaction(const miacode::editor::SimaiT
         qWarning().noquote() << "MiaCode editor:" << result.error;
     }
     if (!result.consumed) return false;
+    clearInlineGhostVisualOnly();
     const auto& tx = result.transaction;
     const bool caretChanged = tx.anchor != document_.utf16Position(send(SCI_GETANCHOR))
         || tx.position != cursorPosition();
@@ -820,11 +879,13 @@ bool ScintillaEditorBridge::applyEditorTransaction(const miacode::editor::SimaiT
 void ScintillaEditorBridge::acceptCompletionFromPopup()
 {
     if (!controller_) return;
+    dismissInlineGhostBeforeUserAction();
     applyEditorTransaction(controller_->acceptCompletion(document_.text(), document_.utf16Position(send(SCI_GETANCHOR)), cursorPosition()));
     forceActiveFocus();
 }
 void ScintillaEditorBridge::dropDocument(const QString& key)
 {
+    clearInlineGhostVisualOnly();
     QScopedValueRollback guard(synchronizing_, true);
     const bool current = document_.scope() == key;
     document_.drop(key);
@@ -886,6 +947,7 @@ bool ScintillaEditorBridge::deleteBookmarkAtLine(int line)
 }
 bool ScintillaEditorBridge::replaceTextRange(int startPos, int endPos, const QString& replacementText, int newCursorPos)
 {
+    clearInlineGhostVisualOnly();
     const int textLen = int(document_.text().size());
     const int boundedStart = qBound(0, qMin(startPos, endPos), textLen);
     const int boundedEnd = qBound(boundedStart, qMax(startPos, endPos), textLen);
@@ -900,14 +962,159 @@ bool ScintillaEditorBridge::replaceTextRange(int startPos, int endPos, const QSt
     result.transaction.position = targetCursor;
     return applyEditorTransaction(result);
 }
+void ScintillaEditorBridge::clearInlineGhostVisualOnly()
+{
+    if (!inlineGhostActive_) {
+        styler_.ghostPreview(false, 0, 0, false, 0, 0);
+        return;
+    }
+    QScopedValueRollback updateGuard(updatingInlineGhost_, true);
+    QScopedValueRollback syncGuard(synchronizing_, true);
+    QScopedValueRollback progGuard(programmatic_, true);
+    const int savedUndo = int(send(SCI_GETUNDOCOLLECTION));
+    const int savedTopLine = int(send(SCI_GETFIRSTVISIBLELINE));
+    const int savedXOffset = int(send(SCI_GETXOFFSET));
+    const int savedRealCaret = cursorPosition();
+    const int savedRealAnchor = visualToRealPosition(document_.utf16Position(send(SCI_GETANCHOR)));
+    send(SCI_SETUNDOCOLLECTION, 0);
+    if (inlineGhostLength_ > 0) {
+        const int rawLen = int(document_.text().size());
+        const int start = qBound(0, inlineGhostStart_, rawLen);
+        const int end = qBound(start, inlineGhostStart_ + inlineGhostLength_, rawLen);
+        if (end > start) {
+            send(SCI_SETTARGETSTART, document_.bytePosition(start));
+            send(SCI_SETTARGETEND, document_.bytePosition(end));
+            sends(SCI_REPLACETARGET, 0, "");
+        }
+    }
+    inlineGhostActive_ = false;
+    inlineGhostStart_ = 0;
+    inlineGhostLength_ = 0;
+    inlineGhostStrikeStart_ = 0;
+    inlineGhostStrikeEnd_ = 0;
+    inlineGhostText_.clear();
+    styler_.ghostPreview(false, 0, 0, false, 0, 0);
+    const int boundedCaret = qBound(0, savedRealCaret, int(document_.text().size()));
+    const int boundedAnchor = qBound(0, savedRealAnchor, int(document_.text().size()));
+    send(SCI_SETSELECTION, document_.bytePosition(boundedCaret), document_.bytePosition(boundedAnchor));
+    reportedCaret_ = int(send(SCI_GETCURRENTPOS));
+    reportedAnchor_ = int(send(SCI_GETANCHOR));
+    scrollVertical(savedTopLine);
+    send(SCI_SETXOFFSET, savedXOffset);
+    send(SCI_SETUNDOCOLLECTION, savedUndo);
+    styler_.style();
+    refreshDiagnostics();
+    request_scene_graph_update(true, false, false);
+    emit inlineGhostVisualChanged();
+}
+void ScintillaEditorBridge::dismissInlineGhostBeforeUserAction()
+{
+    if (!inlineGhostActive_) return;
+    clearInlineGhostVisualOnly();
+    if (noaCopilot_) {
+        QMetaObject::invokeMethod(
+            noaCopilot_.data(),
+            "dismissAllActivePreviews",
+            Qt::DirectConnection);
+    }
+}
 void ScintillaEditorBridge::setGhostStrikeRange(bool active, int startPos, int endPos)
 {
+    setInlineGhostPreview(active, startPos, QString(), startPos, endPos);
+}
+void ScintillaEditorBridge::setInlineGhostPreview(
+    bool active, int insertPos, const QString& ghostText, int strikeStart, int strikeEnd)
+{
     if (!ready_) return;
-    const int textLen = int(document_.text().size());
-    const int boundedStart = qBound(0, qMin(startPos, endPos), textLen);
-    const int boundedEnd = qBound(boundedStart, qMax(startPos, endPos), textLen);
-    styler_.ghostStrike(active && boundedEnd > boundedStart, boundedStart, boundedEnd);
+    if (!active || (ghostText.isEmpty() && strikeEnd <= strikeStart)) {
+        clearInlineGhostVisualOnly();
+        return;
+    }
+    const int realLen = qMax(0, int(document_.text().size()) - (inlineGhostActive_ ? inlineGhostLength_ : 0));
+    const int boundedInsert = qBound(0, insertPos, realLen);
+    const int boundedStrikeStart = qBound(0, qMin(strikeStart, strikeEnd), realLen);
+    const int boundedStrikeEnd = qBound(boundedStrikeStart, qMax(strikeStart, strikeEnd), realLen);
+
+    if (inlineGhostActive_
+        && inlineGhostStart_ == boundedInsert
+        && inlineGhostText_ == ghostText
+        && inlineGhostStrikeStart_ == boundedStrikeStart
+        && inlineGhostStrikeEnd_ == boundedStrikeEnd) {
+        return;
+    }
+
+    QScopedValueRollback updateGuard(updatingInlineGhost_, true);
+    QScopedValueRollback syncGuard(synchronizing_, true);
+    QScopedValueRollback progGuard(programmatic_, true);
+    const int savedUndo = int(send(SCI_GETUNDOCOLLECTION));
+    const int savedTopLine = int(send(SCI_GETFIRSTVISIBLELINE));
+    const int savedXOffset = int(send(SCI_GETXOFFSET));
+    send(SCI_SETUNDOCOLLECTION, 0);
+
+    if (inlineGhostActive_ && inlineGhostStart_ == boundedInsert) {
+        // Streaming fast path: replace only the existing ghost span (or append delta).
+        if (!inlineGhostText_.isEmpty() && ghostText.startsWith(inlineGhostText_)) {
+            const QByteArray delta = QStringView(ghostText).mid(inlineGhostText_.size()).toUtf8();
+            if (!delta.isEmpty()) {
+                const int appendPos = document_.bytePosition(inlineGhostStart_ + inlineGhostLength_);
+                send(SCI_SETTARGETSTART, appendPos);
+                send(SCI_SETTARGETEND, appendPos);
+                sends(SCI_REPLACETARGET, delta.size(), delta.constData());
+            }
+        } else {
+            const int startByte = document_.bytePosition(inlineGhostStart_);
+            const int endByte = document_.bytePosition(inlineGhostStart_ + inlineGhostLength_);
+            const QByteArray utf8 = ghostText.toUtf8();
+            send(SCI_SETTARGETSTART, startByte);
+            send(SCI_SETTARGETEND, endByte);
+            sends(SCI_REPLACETARGET, utf8.size(), utf8.constData());
+        }
+    } else {
+        if (inlineGhostActive_ && inlineGhostLength_ > 0) {
+            const int oldStart = qBound(0, inlineGhostStart_, int(document_.text().size()));
+            const int oldEnd = qBound(oldStart, inlineGhostStart_ + inlineGhostLength_, int(document_.text().size()));
+            if (oldEnd > oldStart) {
+                send(SCI_SETTARGETSTART, document_.bytePosition(oldStart));
+                send(SCI_SETTARGETEND, document_.bytePosition(oldEnd));
+                sends(SCI_REPLACETARGET, 0, "");
+            }
+        }
+        if (!ghostText.isEmpty()) {
+            const int insertByte = document_.bytePosition(boundedInsert);
+            const QByteArray utf8 = ghostText.toUtf8();
+            send(SCI_SETTARGETSTART, insertByte);
+            send(SCI_SETTARGETEND, insertByte);
+            sends(SCI_REPLACETARGET, utf8.size(), utf8.constData());
+        }
+    }
+
+    inlineGhostActive_ = true;
+    inlineGhostStart_ = boundedInsert;
+    inlineGhostLength_ = int(ghostText.size());
+    inlineGhostStrikeStart_ = boundedStrikeStart;
+    inlineGhostStrikeEnd_ = boundedStrikeEnd;
+    inlineGhostText_ = ghostText;
+
+    const int caretByte = document_.bytePosition(boundedInsert);
+    send(SCI_SETSELECTION, caretByte, caretByte);
+    reportedCaret_ = caretByte;
+    reportedAnchor_ = caretByte;
+
+    styler_.style();
+    const int visInlineStart = inlineGhostStart_;
+    const int visInlineEnd = inlineGhostStart_ + inlineGhostLength_;
+    const int visStrikeStart = realToVisualPosition(inlineGhostStrikeStart_, true);
+    const int visStrikeEnd = realToVisualPosition(inlineGhostStrikeEnd_, true);
+    styler_.ghostPreview(
+        visInlineEnd > visInlineStart, visInlineStart, visInlineEnd,
+        visStrikeEnd > visStrikeStart, visStrikeStart, visStrikeEnd);
+
+    scrollVertical(savedTopLine);
+    send(SCI_SETXOFFSET, savedXOffset);
+    send(SCI_SETUNDOCOLLECTION, savedUndo);
     request_scene_graph_update(true, false, false);
+    polish();
+    emit inlineGhostVisualChanged();
 }
 void ScintillaEditorBridge::beginUserInteraction()
 {
@@ -963,6 +1170,12 @@ void ScintillaEditorBridge::keyPressEvent(QKeyEvent* event)
             return;
         }
     }
+    const bool bareModifierKey = (event->key() == Qt::Key_Shift || event->key() == Qt::Key_Control
+        || event->key() == Qt::Key_Alt || event->key() == Qt::Key_Meta || event->key() == Qt::Key_AltGr
+        || event->key() == Qt::Key_CapsLock || event->key() == Qt::Key_NumLock || event->key() == Qt::Key_ScrollLock);
+    if (inlineGhostActive_ && !bareModifierKey) {
+        dismissInlineGhostBeforeUserAction();
+    }
     if (event->key() == Qt::Key_PageUp || event->key() == Qt::Key_PageDown) beginUserInteraction();
     if (controller_) {
         const QString input = event->text();
@@ -985,6 +1198,24 @@ void ScintillaEditorBridge::keyPressEvent(QKeyEvent* event)
 void ScintillaEditorBridge::mousePressEvent(QMouseEvent* event)
 {
     beginUserInteraction();
+    if (inlineGhostActive_) {
+        int gutterWidth = 0;
+        for (int margin = 0; margin < send(SCI_GETMARGINS); ++margin)
+            gutterWidth += send(SCI_GETMARGINWIDTHN, margin);
+        const bool inGutter = event->position().x() >= 0 && event->position().x() < gutterWidth;
+        const int visPos = document_.utf16Position(
+            send(SCI_POSITIONFROMPOINT, qRound(event->position().x()), qRound(event->position().y())));
+        const int realPos = visualToRealPosition(visPos);
+        const bool clickedAtOrAfterGhost = visPos >= inlineGhostStart_;
+        dismissInlineGhostBeforeUserAction();
+        if (event->button() == Qt::LeftButton && !inGutter && clickedAtOrAfterGhost) {
+            forceActiveFocus();
+            select(realPos, realPos);
+            refreshSelection(!programmatic_);
+            event->accept();
+            return;
+        }
+    }
     if (event->button() == Qt::RightButton) {
         int gutterWidth = 0;
         for (int margin = 0; margin < send(SCI_GETMARGINS); ++margin)
@@ -1045,6 +1276,9 @@ void ScintillaEditorBridge::wheelEvent(QWheelEvent* event)
 void ScintillaEditorBridge::inputMethodEvent(QInputMethodEvent* event)
 {
     if (controller_ && controller_->imeInputDisabled()) { event->accept(); return; }
+    if (inlineGhostActive_ && (!event->preeditString().isEmpty() || !event->commitString().isEmpty())) {
+        dismissInlineGhostBeforeUserAction();
+    }
     {
         QScopedValueRollback guard(handlingIme_, true);
         imeComposing_ = !event->preeditString().isEmpty() && event->commitString().isEmpty();

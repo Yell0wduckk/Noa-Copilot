@@ -3,6 +3,7 @@
 #include "app/services/PlaybackControl.h"
 #include "audio/PreviewAudioSettings.h"
 #include "core/analysis/MuriRenderOptions.h"
+#include "core/chart/model/TimelineData.h"
 #include "core/video/PreviewRenderSettings.h"
 
 #include <QObject>
@@ -87,6 +88,24 @@ public:
     virtual void applyAudioSettings(const PreviewAudioSettings& settings) = 0;
     virtual void saveAudioSettingsAsSoftwareDefault() = 0;
     virtual void restoreAudioSettingsFromSoftwareDefault() = 0;
+
+    // ---- NoaCopilot ghost preview + struck-through exclusion ----
+    virtual void setGhostPreviewOverlay(
+        const QVector<TimelineNoteMarker>& ghostMarkers,
+        bool strikeActive,
+        int strikeStartLine,
+        int strikeStartCol,
+        int strikeEndLine,
+        int strikeEndCol)
+    {
+        Q_UNUSED(ghostMarkers);
+        Q_UNUSED(strikeActive);
+        Q_UNUSED(strikeStartLine);
+        Q_UNUSED(strikeStartCol);
+        Q_UNUSED(strikeEndLine);
+        Q_UNUSED(strikeEndCol);
+    }
+    virtual void clearGhostPreviewOverlay() {}
 
 protected:
     PreviewSurface() = default;
