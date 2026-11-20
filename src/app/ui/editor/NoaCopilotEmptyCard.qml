@@ -120,33 +120,13 @@ Item {
                     width: parent.width - 16
                     spacing: 6
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Text {
-                            Layout.preferredWidth: 68
-                            text: "创意挡位"
-                            font.family: Theme.uiFont
-                            font.pixelSize: Theme.secondaryFontSize
-                            color: Theme.colors.text.secondary
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-                            Repeater {
-                                model: root.noaCopilot ? root.noaCopilot.creativityPresetOptions : []
-                                delegate: AppChoiceButton {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    implicitHeight: Theme.compactControlHeight
-                                    text: modelData.label
-                                    checked: root.noaCopilot ? root.noaCopilot.creativityPreset === modelData.value : false
-                                    onClicked: if (root.noaCopilot) root.noaCopilot.creativityPreset = modelData.value
-                                }
-                            }
-                        }
+                    NoaTemperatureSlider {
+                        label: "采样温度"
+                        labelWidth: 68
+                        labelFontSize: Theme.secondaryFontSize
+                        controlEnabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                        value: root.noaCopilot ? root.noaCopilot.temperature : 0.5
+                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                     }
 
                     RowLayout {

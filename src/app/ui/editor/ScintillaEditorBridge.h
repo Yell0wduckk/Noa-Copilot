@@ -126,6 +126,7 @@ public:
     Q_INVOKABLE bool renameBookmarkAtLine(int line, const QString& title);
     Q_INVOKABLE bool deleteBookmarkAtLine(int line);
     Q_INVOKABLE bool replaceTextRange(int startPos, int endPos, const QString& replacementText, int newCursorPos = -1);
+    Q_INVOKABLE void setGhostStrikeRange(bool active, int startPos, int endPos);
 signals:
     void bindingsChanged();
     void inlineCopilotRequested();

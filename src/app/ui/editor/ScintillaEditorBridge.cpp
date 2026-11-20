@@ -900,6 +900,15 @@ bool ScintillaEditorBridge::replaceTextRange(int startPos, int endPos, const QSt
     result.transaction.position = targetCursor;
     return applyEditorTransaction(result);
 }
+void ScintillaEditorBridge::setGhostStrikeRange(bool active, int startPos, int endPos)
+{
+    if (!ready_) return;
+    const int textLen = int(document_.text().size());
+    const int boundedStart = qBound(0, qMin(startPos, endPos), textLen);
+    const int boundedEnd = qBound(boundedStart, qMax(startPos, endPos), textLen);
+    styler_.ghostStrike(active && boundedEnd > boundedStart, boundedStart, boundedEnd);
+    request_scene_graph_update(true, false, false);
+}
 void ScintillaEditorBridge::beginUserInteraction()
 {
     viewportToRestore_.reset();

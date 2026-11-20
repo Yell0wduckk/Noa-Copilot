@@ -38,6 +38,7 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QString statusMessage READ statusLabel NOTIFY statusChanged)
     Q_PROPERTY(QString statusDetail READ statusDetail NOTIFY statusChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY statusChanged)
+    Q_PROPERTY(bool audioAnalyzing READ audioAnalyzing NOTIFY statusChanged)
     Q_PROPERTY(bool daemonReady READ daemonReady NOTIFY statusChanged)
     Q_PROPERTY(QString deviceInfo READ deviceInfo NOTIFY statusChanged)
 
@@ -49,10 +50,7 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QVariantList availableCheckpoints READ availableCheckpoints NOTIFY checkpointsChanged)
 
     // ---- Primary Generation Controls ----
-    Q_PROPERTY(bool convEnabled READ convEnabled WRITE setConvEnabled NOTIFY configChanged)
-    Q_PROPERTY(bool mertEnabled READ mertEnabled WRITE setMertEnabled NOTIFY configChanged)
-    Q_PROPERTY(QString creativityPreset READ creativityPreset WRITE setCreativityPreset NOTIFY configChanged)
-    Q_PROPERTY(QVariantList creativityPresetOptions READ creativityPresetOptions CONSTANT)
+    Q_PROPERTY(double temperature READ temperature WRITE setTemperature NOTIFY configChanged)
     Q_PROPERTY(QString defaultDesigner READ defaultDesigner WRITE setDefaultDesigner NOTIFY configChanged)
     Q_PROPERTY(QVariantList designerOptions READ designerOptions NOTIFY designerOptionsChanged)
     Q_PROPERTY(QString device READ device WRITE setDevice NOTIFY configChanged)
@@ -63,7 +61,6 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QVariantList precisionModeOptions READ precisionModeOptions CONSTANT)
 
     // ---- Advanced Sampling & Runtime Controls ----
-    Q_PROPERTY(double temperature READ temperature WRITE setTemperature NOTIFY configChanged)
     Q_PROPERTY(double slideBias READ slideBias WRITE setSlideBias NOTIFY configChanged)
     Q_PROPERTY(int seed READ seed WRITE setSeed NOTIFY configChanged)
     Q_PROPERTY(int debounceMs READ debounceMs WRITE setDebounceMs NOTIFY configChanged)
@@ -137,6 +134,7 @@ public:
     QString statusLabel() const { return statusLabel_; }
     QString statusDetail() const { return statusDetail_; }
     bool busy() const { return activeRequestId_ > 0; }
+    bool audioAnalyzing() const { return statusState_ == QStringLiteral("warming_audio"); }
     bool daemonReady() const { return daemonConfigured_; }
     QString deviceInfo() const { return deviceInfo_; }
 
@@ -147,14 +145,6 @@ public:
     void setCheckpointDir(const QString& dir);
     QString activeCheckpointName() const;
     QVariantList availableCheckpoints() const { return availableCheckpoints_; }
-
-    QString creativityPreset() const { return creativityPreset_; }
-    bool convEnabled() const { return convEnabled_; }
-    void setConvEnabled(bool enabled);
-    bool mertEnabled() const { return mertEnabled_; }
-    void setMertEnabled(bool enabled);
-    void setCreativityPreset(const QString& preset);
-    QVariantList creativityPresetOptions() const;
 
     QString defaultDesigner() const { return defaultDesigner_; }
     void setDefaultDesigner(const QString& designer);
@@ -309,9 +299,9 @@ signals:
 private:
     void loadPreferences();
     void savePreferences() const;
-    void applyCreativityPresetValues(const QString& preset);
     void rebuildDesignerOptions(const QStringList& vocab);
     void updateStatus(const QString& state, const QString& label, const QString& detail = QString());
+    void updateEditorGhostStrike();
 
     QString defaultBuiltinRoot() const;
     QString defaultCheckpointsDir() const;
@@ -357,14 +347,11 @@ private:
     // ---- Preferences ----
     bool enabled_ = true;
     bool autoContinue_ = true;
-    QString creativityPreset_ = QStringLiteral("balanced");
     QString defaultDesigner_;
     QString device_ = QStringLiteral("auto");
     QString precision_ = QStringLiteral("bf16");
-    double temperature_ = 1.0;
+    double temperature_ = 0.5;
     double slideBias_ = 0.0;
-    bool convEnabled_ = true;
-    bool mertEnabled_ = true;
     int seed_ = -1;
     int debounceMs_ = 420;
     QString checkpointPath_;
@@ -393,6 +380,7 @@ private:
 
     int nextRpcId_ = 1;
     int activeRequestId_ = 0;
+    int pendingBindSongId_ = 0;
     QString activeRequestMode_;
     quint64 activeRequestRevision_ = 0;
     QString boundSongKey_;
@@ -412,6 +400,9 @@ private:
     QString ghostExtraLines_;
     int ghostReplaceStart_ = 0;
     int ghostReplaceEnd_ = 0;
+    int ghostOrigSpanEnd_ = 0;
+    int ghostOrigCut_ = 0;
+    int ghostBridgeLen_ = 0;
     QJsonArray ghostSteps_;
     int ghostCurrentStep_ = 0;
 

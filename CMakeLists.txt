@@ -701,6 +701,7 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/chrome/MainToolBar.qml
     src/app/ui/chrome/StatusBar.qml
     src/app/ui/chrome/NoaCopilotStatusPill.qml
+    src/app/ui/chrome/NoaTemperatureSlider.qml
     src/app/ui/editor/NoaCopilotGhostOverlay.qml
     src/app/ui/editor/NoaCopilotInlineCard.qml
     src/app/ui/editor/NoaCopilotEmptyCard.qml

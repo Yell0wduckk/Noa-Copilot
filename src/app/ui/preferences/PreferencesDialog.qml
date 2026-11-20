@@ -1033,20 +1033,6 @@ AppDialog {
                             onToggled: if (root.noaCopilot) root.noaCopilot.autoContinueEnabled = checked
                         }
 
-                        PreferenceSwitch {
-                            text: "使用 Conv 音频特征"
-                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                            checked: root.noaCopilot ? root.noaCopilot.convEnabled : true
-                            onToggled: if (root.noaCopilot) root.noaCopilot.convEnabled = checked
-                        }
-
-                        PreferenceSwitch {
-                            text: "使用 MERT 音频特征"
-                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                            checked: root.noaCopilot ? root.noaCopilot.mertEnabled : true
-                            onToggled: if (root.noaCopilot) root.noaCopilot.mertEnabled = checked
-                        }
-
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.minimumHeight: root.settingsRowHeight
@@ -1093,11 +1079,12 @@ AppDialog {
                             }
                         }
 
-                        PreferenceCombo {
-                            label: "创意挡位"
-                            options: root.noaCopilot ? root.noaCopilot.creativityPresetOptions : []
-                            currentValue: root.noaCopilot ? root.noaCopilot.creativityPreset : "balanced"
-                            onPicked: value => { if (root.noaCopilot) root.noaCopilot.creativityPreset = value }
+                        NoaTemperatureSlider {
+                            label: "采样温度"
+                            labelWidth: root.settingsLabelWidth
+                            controlEnabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                            value: root.noaCopilot ? root.noaCopilot.temperature : 0.5
+                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                         }
 
                         PreferenceCombo {
@@ -1302,17 +1289,6 @@ AppDialog {
                                         text: "-1 随机"
                                         color: Theme.colors.text.secondary
                                     }
-                                }
-
-                                PreferenceSlider {
-                                    label: "采样温度"
-                                    from: 0.0
-                                    to: 2.0
-                                    stepSize: 0.05
-                                    decimals: 2
-                                    suffix: ""
-                                    value: root.noaCopilot ? root.noaCopilot.temperature : 0.90
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                                 }
 
                             }

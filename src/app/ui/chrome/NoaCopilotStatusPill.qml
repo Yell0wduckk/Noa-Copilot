@@ -212,34 +212,14 @@ Item {
                 }
             }
 
-            // Creativity Preset
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 6
-
-                Text {
-                    Layout.preferredWidth: 64
-                    text: "创意挡位"
-                    font.family: Theme.uiFont
-                    font.pixelSize: Theme.secondaryFontSize
-                    color: Theme.colors.text.secondary
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    Repeater {
-                        model: root.noaCopilot ? root.noaCopilot.creativityPresetOptions : []
-                        delegate: AppChoiceButton {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            implicitHeight: Theme.compactControlHeight
-                            text: modelData.label
-                            checked: root.noaCopilot ? root.noaCopilot.creativityPreset === modelData.value : false
-                            onClicked: if (root.noaCopilot) root.noaCopilot.creativityPreset = modelData.value
-                        }
-                    }
-                }
+            // Sampling Temperature (0..1)
+            NoaTemperatureSlider {
+                label: "采样温度"
+                labelWidth: 64
+                labelFontSize: Theme.secondaryFontSize
+                controlEnabled: root.noaCopilot ? root.noaCopilot.enabled : false
+                value: root.noaCopilot ? root.noaCopilot.temperature : 0.5
+                onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
             }
 
             // Quick Actions when editing a difficulty
@@ -397,18 +377,6 @@ Item {
                             text: "-1 随机"
                             color: Theme.colors.text.secondary
                         }
-                    }
-
-                    LabeledSlider {
-                        label: "采样温度"
-                        labelWidth: 68
-                        from: 0.0
-                        to: 2.0
-                        stepSize: 0.05
-                        decimals: 2
-                        suffix: ""
-                        value: root.noaCopilot ? root.noaCopilot.temperature : 0.90
-                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                     }
 
 
