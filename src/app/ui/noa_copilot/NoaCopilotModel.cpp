@@ -115,9 +115,11 @@ NoaCopilotModel::NoaCopilotModel(
     refreshAudioCacheSize();
 
     connect(&document_, &DocumentModel::documentStateChanged, this, [this]() {
-        dismissGhost();
-        if (pendingRangeActive_) {
-            rejectPendingRange();
+        if (!document_.hasDocument() || document_.wholeSourceEditorActive()) {
+            dismissGhost();
+            if (pendingRangeActive_) {
+                rejectPendingRange();
+            }
         }
         sendBindSongIfNeeded();
         emit emptyCardChanged();
@@ -127,6 +129,8 @@ NoaCopilotModel::NoaCopilotModel(
         if (pendingRangeActive_) {
             rejectPendingRange();
         }
+        dismissedEmptyDifficultyId_ = -1;
+        lastObservedEditorText_ = document_.chartText();
         sendBindSongIfNeeded();
         emit emptyCardChanged();
     });
@@ -1547,18 +1551,22 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
     int selEnd,
     bool textChanged)
 {
+    const bool cursorMoved = (cursorPos != lastCursorPos_ || selStart != lastSelStart_ || selEnd != lastSelEnd_);
     lastCursorPos_ = cursorPos;
     lastSelStart_ = selStart;
     lastSelEnd_ = selEnd;
     idleVramTimer_.start();
 
-    if (ghostActive_) {
+    if (ghostActive_ && (textChanged || cursorMoved)) {
         dismissGhost();
+    }
+    if (selStart != selEnd) {
+        debounceTimer_.stop();
     }
     if (textChanged && !fullStreamingActive_) {
         if (pendingRangeActive_) rejectPendingRange();
         sendSyncChartIfNeeded();
-        if (enabled_ && autoContinue_ && hasCheckpoint() && !inlineCardVisible_ && !pendingRangeActive_) {
+        if (enabled_ && autoContinue_ && hasCheckpoint() && !inlineCardVisible_ && !pendingRangeActive_ && selStart == selEnd) {
             debounceTimer_.start(debounceMs_);
         }
     }
