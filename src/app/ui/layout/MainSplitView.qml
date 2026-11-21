@@ -268,6 +268,10 @@ Item {
     ApplicationWindow {
         id: detachedPreviewWindow
         objectName: "detachedPreviewWindow"
+        NoaCandidateShortcuts {
+            noaCopilot: root.noaCopilot
+            enabled: detachedPreviewWindow.active && root.viewState.difficultyEditorActive && !root.pages.overlayActive
+        }
         readonly property Item backdropSource: detachedSceneContent
         property var windowChrome: null
         property bool alwaysOnTop: true

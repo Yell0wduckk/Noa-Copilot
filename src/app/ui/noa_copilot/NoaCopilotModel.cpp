@@ -21,6 +21,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QMetaObject>
+#include <QScopeGuard>
 #include <QScopedValueRollback>
 #include <QThread>
 #include <memory>
@@ -149,9 +150,6 @@ NoaCopilotModel::NoaCopilotModel(
     connect(&document_, &DocumentModel::documentStateChanged, this, [this]() {
         if (!document_.hasDocument() || document_.wholeSourceEditorActive()) {
             dismissGhost();
-            if (pendingRangeActive_) {
-                rejectPendingRange();
-            }
         }
         sendBindSongIfNeeded();
         emit emptyCardChanged();
@@ -160,9 +158,6 @@ NoaCopilotModel::NoaCopilotModel(
         cancelActiveGeneration();
         discardCandidates();
         dismissGhost();
-        if (pendingRangeActive_) {
-            rejectPendingRange();
-        }
         dismissedEmptyDifficultyId_ = -1;
         lastObservedEditorText_ = document_.chartText();
         sendBindSongIfNeeded();
@@ -180,9 +175,6 @@ NoaCopilotModel::NoaCopilotModel(
         discardCandidates();
         warmTimer_.start();
         dismissGhost();
-        if (pendingRangeActive_) {
-            rejectPendingRange();
-        }
         dismissedEmptyDifficultyId_ = -1;
         lastObservedEditorText_ = document_.chartText();
         sendSyncChartIfNeeded();
@@ -304,7 +296,8 @@ void NoaCopilotModel::loadPreferences()
 {
     const QJsonObject root = PreferenceDocument::loadPreferencesObject();
     const QJsonObject sec = root.value(QLatin1String(kPrefSectionKey)).toObject();
-    lineAlignBeats_ = sec["line_align_beats"].toInt(4);
+    lineAlignBeats_ = qBound(1, sec["line_align_beats"].toInt(4), 64);
+    continuationLines_ = qBound(1, sec["continuation_lines"].toInt(4), 64);
     candidateCount_ = qBound(1, sec["candidate_count"].toInt(3), 8);
     cpuThreads_ = sec["cpu_threads"].toInt(4);
     mertCache_ = sec["mert_cache"].toBool(true);
@@ -348,6 +341,7 @@ void NoaCopilotModel::savePreferences() const
     QJsonObject root = PreferenceDocument::loadPreferencesObject();
     QJsonObject sec;
     sec["line_align_beats"] = lineAlignBeats_;
+    sec["continuation_lines"] = continuationLines_;
     sec["candidate_count"] = candidateCount_;
     sec["cpu_threads"] = cpuThreads_;
     sec["mert_cache"] = mertCache_;
@@ -416,9 +410,6 @@ void NoaCopilotModel::setEnabled(bool value)
     emit emptyCardChanged();
     if (!enabled_) {
         dismissGhost();
-        if (pendingRangeActive_) {
-            rejectPendingRange();
-        }
         stopDaemon();
         updateStatus(QStringLiteral("disabled"), QStringLiteral("已关闭"));
     } else {
@@ -514,6 +505,15 @@ void NoaCopilotModel::setLineAlignBeats(int value)
     value = qBound(1, value, 64);
     if (lineAlignBeats_ == value) return;
     lineAlignBeats_ = value;
+    savePreferences();
+    emit configChanged();
+}
+
+void NoaCopilotModel::setContinuationLines(int value)
+{
+    value = qBound(1, value, 64);
+    if (continuationLines_ == value) return;
+    continuationLines_ = value;
     savePreferences();
     emit configChanged();
 }
@@ -684,54 +684,6 @@ void NoaCopilotModel::setCustomSourceRoot(const QString& path)
     }
 }
 
-void NoaCopilotModel::setInlineCardVisible(bool visible)
-{
-    if (inlineCardVisible_ == visible) {
-        return;
-    }
-    inlineCardVisible_ = visible;
-    emit inlineCardChanged();
-}
-
-void NoaCopilotModel::setInlineSpanBeats(int beats)
-{
-    beats = qBound(0, beats, 64);
-    const bool fill = (beats == 0);
-    if (inlineSpanBeats_ == beats && inlineFillToNext_ == fill) {
-        return;
-    }
-    inlineSpanBeats_ = beats;
-    inlineFillToNext_ = fill;
-    emit inlineCardChanged();
-}
-
-void NoaCopilotModel::setInlineFillToNext(bool fill)
-{
-    if (inlineFillToNext_ == fill) {
-        return;
-    }
-    inlineFillToNext_ = fill;
-    emit inlineCardChanged();
-}
-
-void NoaCopilotModel::setInlineLevelOverride(const QString& level)
-{
-    if (inlineLevelOverride_ == level) {
-        return;
-    }
-    inlineLevelOverride_ = level;
-    emit inlineCardChanged();
-}
-
-void NoaCopilotModel::setInlineDesignerOverride(const QString& designer)
-{
-    if (inlineDesignerOverride_ == designer) {
-        return;
-    }
-    inlineDesignerOverride_ = designer;
-    emit inlineCardChanged();
-}
-
 bool NoaCopilotModel::emptyCardVisible() const
 {
     if (!enabled_ || !document_.hasDocument() || document_.wholeSourceEditorActive()) {
@@ -741,7 +693,7 @@ bool NoaCopilotModel::emptyCardVisible() const
     if (diffId <= 0 || diffId == dismissedEmptyDifficultyId_) {
         return false;
     }
-    if (fullStreamingActive_ || pendingRangeActive_ || ghostActive_) {
+    if (fullStreamingActive_ || ghostActive_) {
         return false;
     }
     QString trimmed = document_.chartText().trimmed();
@@ -1045,7 +997,8 @@ void NoaCopilotModel::ensureDaemonRunning()
             activeRequestId_ = 0;
             pendingBindSongId_ = 0;
             boundSongKey_.clear();
-    lastWarmSignature_ = {};
+            lastWarmSignature_ = {};
+            emit ghostStateChanged();
             if (enabled_) {
                 updateStatus(
                     QStringLiteral("error"),
@@ -1079,6 +1032,7 @@ void NoaCopilotModel::stopDaemon()
     warmTimer_.stop();
     idleVramTimer_.stop();
     activeRequestId_ = 0;
+    emit ghostStateChanged();
     pendingBindSongId_ = 0;
     daemonConfigured_ = false;
     checkpointLoadedInDaemon_ = false;
@@ -1216,8 +1170,6 @@ void NoaCopilotModel::sendSyncChartIfNeeded()
 
 void NoaCopilotModel::sendSuggestRequest(
     const QString& mode,
-    int spanBeats,
-    bool fillToNext,
     const QString& levelOverride,
     const QString& designerOverride)
 {
@@ -1258,10 +1210,6 @@ void NoaCopilotModel::sendSuggestRequest(
         if (statusState_ != QStringLiteral("warming_audio")) {
             updateStatus(QStringLiteral("generating"), QStringLiteral("正在流式生成整曲..."));
         }
-    } else if (mode == QStringLiteral("range")) {
-        if (statusState_ != QStringLiteral("warming_audio")) {
-            updateStatus(QStringLiteral("generating"), QStringLiteral("正在生成段落..."));
-        }
     } else {
         if (statusState_ != QStringLiteral("warming_audio")) {
             updateStatus(QStringLiteral("generating"), QStringLiteral("正在续写..."));
@@ -1290,13 +1238,13 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("cursor_offset"), lastCursorPos_);
     req.insert(QStringLiteral("sel_start"), lastSelStart_);
     req.insert(QStringLiteral("sel_end"), lastSelEnd_);
-    req.insert(QStringLiteral("span_beats"), qMax(1, spanBeats));
-    req.insert(QStringLiteral("fill_to_next"), fillToNext);
+    if (mode == QStringLiteral("continue")) req.insert(QStringLiteral("continuation_lines"), continuationLines_);
     req.insert(QStringLiteral("temperature"), temperature_);
     req.insert(QStringLiteral("slide_bias"), slideBias_);
     req.insert(QStringLiteral("seed"), seed_);
     request_ = req;
     prefetchThrough_ = mode == "full" ? 1 : candidateCount_;
+    emit ghostStateChanged();
     writeDaemonJson(req);
 }
 
@@ -1411,16 +1359,14 @@ void NoaCopilotModel::warmSong()
     writeDaemonJson(req);
 }
 
-bool NoaCopilotModel::hasSkeleton(bool selectionOnly) const
+bool NoaCopilotModel::selectionHasSkeleton() const
 {
     if (document_.wholeSourceEditorActive() || !document_.hasDocument()) return false;
     const QString body = document_.chartText();
     const int lo = qMin(lastSelStart_,lastSelEnd_), hi = qMax(lastSelStart_,lastSelEnd_);
-    const bool selected = lo!=hi;
-    if (selectionOnly && !selected) return false;
-    const int pos = selected ? lo : lastCursorPos_;
-    const int a = pos > 0 ? int(body.lastIndexOf('\n',pos-1))+1 : 0;
-    const int nl = body.indexOf('\n',selected ? hi : pos);
+    if (lo == hi) return false;
+    const int a = lo > 0 ? int(body.lastIndexOf('\n', lo - 1)) + 1 : 0;
+    const int nl = body.indexOf('\n', hi);
     const int b = nl < 0 ? int(body.size()) : nl;
     static const QRegularExpression item(R"((?:^|[,/})])\s*(x|x?\*+)\s*(?=[/,]|$))",
         QRegularExpression::CaseInsensitiveOption | QRegularExpression::MultilineOption);
@@ -1431,14 +1377,14 @@ bool NoaCopilotModel::hasSkeleton(bool selectionOnly) const
     auto matches = item.globalMatch(chunk);
     while (matches.hasNext()) {
         const auto match = matches.next();
-        if (!selected || (a + match.capturedStart(1) < hi && a + match.capturedEnd(1) > lo)) return true;
+        if (a + match.capturedStart(1) < hi && a + match.capturedEnd(1) > lo) return true;
     }
     return false;
 }
 
 void NoaCopilotModel::mouseSkeletonSelection(bool quick)
 {
-    skeletonSelection_ = enabled_ && hasSkeleton(true);
+    skeletonSelection_ = enabled_ && selectionHasSkeleton();
     emit ghostStateChanged();
     if (skeletonSelection_ && quick) triggerManualContinue();
 }
@@ -1490,7 +1436,7 @@ void NoaCopilotModel::notifyHint(const QString& message)
 void NoaCopilotModel::beginCandidate(int number, const QJsonObject& layout)
 {
     Candidate c;
-    c.writer.begin(layout, document_.chartText(), lineAlignBeats_);
+    c.writer.begin(layout, document_.chartText(), request_["line_align_beats"].toInt(4));
     c.left = c.cut = layout["left"].toInt();
     c.right = c.origEnd = layout["right"].toInt();
     c.startSecond = layout["start_second"].toDouble();
@@ -1659,7 +1605,6 @@ bool NoaCopilotModel::handleStructured(const QJsonObject& m)
         const bool first = candidates_.isEmpty() && number == 1;
         beginCandidate(number, m);
         if (first) selected_ = 1;
-        if (inlineCardVisible_) closeInlineCard();
         if (number == selected_ && !fullStreamingActive_) {
             renderTimer_.stop();
             showCandidate();
@@ -1740,6 +1685,10 @@ bool NoaCopilotModel::handleStructured(const QJsonObject& m)
 void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
 {
     if (handleStructured(message)) return;
+    const bool hadSession = candidateSessionActive();
+    const auto notifySession = qScopeGuard([&] {
+        if (hadSession != candidateSessionActive()) emit ghostStateChanged();
+    });
     const QString event = message.value(QStringLiteral("event")).toString();
     if (event == QStringLiteral("configured")) {
         daemonConfigured_ = message.value(QStringLiteral("ok")).toBool();
@@ -1802,9 +1751,7 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
             if (statusState_ == QStringLiteral("warming_audio")) {
                 const QString genLabel = activeRequestMode_ == QStringLiteral("full")
                     ? QStringLiteral("正在流式生成整曲...")
-                    : (activeRequestMode_ == QStringLiteral("range")
-                           ? QStringLiteral("正在生成段落...")
-                           : QStringLiteral("正在续写..."));
+                    : QStringLiteral("正在续写...");
                 updateStatus(QStringLiteral("generating"), genLabel);
             }
         } else if (checkpointLoadedInDaemon_) {
@@ -1859,29 +1806,8 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         const int replaceStart = message.value(QStringLiteral("replace_start")).toInt(lastCursorPos_);
         const int replaceEnd = message.value(QStringLiteral("replace_end")).toInt(lastCursorPos_);
         const double startSec = message.value(QStringLiteral("start_second")).toDouble(currentChartFirstSeconds());
-        const double endSec = message.value(QStringLiteral("end_second")).toDouble(startSec + 2.0);
         const double activeBpm = message.value(QStringLiteral("active_bpm")).toDouble(currentChartBpm());
         const QString ghostSimai = message.value(QStringLiteral("ghost_simai")).toString();
-        const int noteCount = message.value(QStringLiteral("note_count")).toInt();
-
-        if (mode == QStringLiteral("range")) {
-            if (inlineCardVisible_) {
-                inlineCardVisible_ = false;
-                emit inlineCardChanged();
-            }
-            pendingRangeActive_ = true;
-            rangeStreaming_ = true;
-            pendingRangeText_ = text;
-            pendingReplaceStart_ = replaceStart;
-            pendingReplaceEnd_ = replaceEnd;
-            pendingStartSecond_ = startSec;
-            pendingEndSecond_ = endSec;
-            pendingNoteCount_ = noteCount;
-            emit pendingRangeChanged();
-            updateEditorGhostStrike();
-            applyDualSurfaceGhostPreview(ghostSimai, startSec, activeBpm, replaceStart, replaceEnd);
-            return;
-        }
 
         // mode == "continue" streaming
         ghostActive_ = true;
@@ -1918,10 +1844,6 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
                 ghostStreaming_ = false;
                 dismissGhost();
             }
-            if (rangeStreaming_) {
-                rangeStreaming_ = false;
-                rejectPendingRange();
-            }
             endFullStream();
             updateStatus(QStringLiteral("error"), QStringLiteral("生成失败"), err);
             return;
@@ -1937,10 +1859,6 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
                 ghostStreaming_ = false;
                 dismissGhost();
             }
-            if (rangeStreaming_) {
-                rangeStreaming_ = false;
-                rejectPendingRange();
-            }
             endFullStream();
             return;
         }
@@ -1948,10 +1866,8 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         const int replaceStart = message.value(QStringLiteral("replace_start")).toInt(lastCursorPos_);
         const int replaceEnd = message.value(QStringLiteral("replace_end")).toInt(lastCursorPos_);
         const double startSec = message.value(QStringLiteral("start_second")).toDouble(currentChartFirstSeconds());
-        const double endSec = message.value(QStringLiteral("end_second")).toDouble(startSec + 2.0);
         const double activeBpm = message.value(QStringLiteral("active_bpm")).toDouble(currentChartBpm());
         const QString ghostSimai = message.value(QStringLiteral("ghost_simai")).toString();
-        const int noteCount = message.value(QStringLiteral("note_count")).toInt();
 
         if (mode == QStringLiteral("full")) {
             if (publishFullChart(text)) streamingProgress_ = 1.0;
@@ -1962,33 +1878,6 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         }
 
         activeRequestId_ = 0;
-        if (mode == QStringLiteral("range")) {
-            rangeStreaming_ = false;
-            if (text.trimmed().isEmpty()) {
-                pendingAcceptAfterStream_ = false;
-                if (pendingRangeActive_) rejectPendingRange();
-                return;
-            }
-            inlineCardVisible_ = false;
-            emit inlineCardChanged();
-
-            pendingRangeActive_ = true;
-            pendingRangeText_ = text;
-            pendingReplaceStart_ = replaceStart;
-            pendingReplaceEnd_ = replaceEnd;
-            pendingStartSecond_ = startSec;
-            pendingEndSecond_ = endSec;
-            pendingNoteCount_ = noteCount;
-            emit pendingRangeChanged();
-            updateEditorGhostStrike();
-            applyDualSurfaceGhostPreview(ghostSimai, startSec, activeBpm, replaceStart, replaceEnd);
-            if (pendingAcceptAfterStream_) {
-                pendingAcceptAfterStream_ = false;
-                acceptPendingRange();
-            }
-            return;
-        }
-
         // mode == "continue"
         ghostStreaming_ = false;
         if (text.trimmed().isEmpty()) {
@@ -2030,10 +1919,6 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
             if (ghostStreaming_) {
                 ghostStreaming_ = false;
                 dismissGhost();
-            }
-            if (rangeStreaming_) {
-                rangeStreaming_ = false;
-                rejectPendingRange();
             }
             endFullStream();
             if (checkpointLoadedInDaemon_) {
@@ -2193,12 +2078,6 @@ void NoaCopilotModel::updateEditorGhostStrike()
         inlineText = ghostText_;
         strikeStart = ghostReplaceStart_;
         strikeEnd = ghostReplaceEnd_;
-    } else if (pendingRangeActive_ && (!pendingRangeText_.isEmpty() || pendingReplaceEnd_ > pendingReplaceStart_)) {
-        active = true;
-        insertPos = pendingReplaceStart_;
-        inlineText = pendingRangeText_;
-        strikeStart = pendingReplaceStart_;
-        strikeEnd = pendingReplaceEnd_;
     }
     QMetaObject::invokeMethod(
         editorBridge_.data(),
@@ -2230,18 +2109,38 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
     idleVramTimer_.start();
 
     if (textChanged && activeRequestId_ > 0
-        && (activeRequestMode_ == QStringLiteral("continue") || activeRequestMode_ == QStringLiteral("range"))) {
+        && activeRequestMode_ == QStringLiteral("continue")) {
         cancelActiveGeneration();
     }
     if (ghostActive_ && textChanged) {
         dismissGhost();
     }
-    const bool selection = selStart != selEnd && hasSkeleton(true);
+    const bool selection = selectionHasSkeleton();
     if (selection != skeletonSelection_) { skeletonSelection_ = selection; emit ghostStateChanged(); }
     if (textChanged && !fullStreamingActive_) {
-        if (pendingRangeActive_) rejectPendingRange();
         sendSyncChartIfNeeded();
     }
+}
+
+bool NoaCopilotModel::candidateSessionActive() const
+{
+    return enabled_ && !fullStreamingActive_ && (ghostActive_ || !candidates_.isEmpty()
+        || (activeRequestId_ > 0 && activeRequestMode_ == QStringLiteral("continue")));
+}
+
+bool NoaCopilotModel::handleCandidateKey(int key)
+{
+    if (!candidateSessionActive()) return false;
+    if (key == Qt::Key_Up || key == Qt::Key_Down) {
+        if (!candidates_.isEmpty()) switchCandidate(key == Qt::Key_Up ? -1 : 1);
+        else if (key == Qt::Key_Down && !ghostActive_) notifyHint(QStringLiteral("诺亚还没写完哦，请稍等"));
+        return true;
+    }
+    if (key != Qt::Key_Tab) return false;
+    if (!candidates_.isEmpty() && !selected_) dismissGhost();
+    else if (!ghostActive_ || ghostStreaming_) pendingAcceptAfterStream_ = true;
+    else acceptFullGhost();
+    return true;
 }
 
 bool NoaCopilotModel::handleEditorKeyPress(int key, int modifiers)
@@ -2255,61 +2154,15 @@ bool NoaCopilotModel::handleEditorKeyPress(int key, int modifiers)
     const bool meta = (modifiers & Qt::MetaModifier) != 0;
     const bool plainTab = (key == Qt::Key_Tab && !ctrl && !shift && !alt && !meta);
 
-    if (candidates_.isEmpty() && activeRequestId_ && activeRequestMode_ == "continue"
-        && key == Qt::Key_Down && modifiers == Qt::NoModifier) {
-        notifyHint(QStringLiteral("诺亚还没写完哦，请稍等"));
-        return true;
-    }
-    if (!candidates_.isEmpty() && !fullStreamingActive_ && !ctrl && !alt && !shift && !meta) {
-        if (key == Qt::Key_Up || key == Qt::Key_Down) {
-            switchCandidate(key == Qt::Key_Up ? -1 : 1);
-            return true;
-        }
+    if (modifiers == Qt::NoModifier && handleCandidateKey(key)) return true;
+    if (!candidates_.isEmpty() && !fullStreamingActive_ && modifiers == Qt::NoModifier) {
         if (key == Qt::Key_Right) {
             if (selected_ && !ghostStreaming_) acceptNextGhostStep();
             return true;
         }
-        if (plainTab) {
-            if (!selected_) dismissGhost();
-            else if (ghostStreaming_) pendingAcceptAfterStream_ = true;
-            else acceptFullGhost();
-            return true;
-        }
         if (key == Qt::Key_Escape) { dismissGhost(); return true; }
     }
-    if (pendingRangeActive_) {
-        if (plainTab) {
-            if (rangeStreaming_) {
-                pendingAcceptAfterStream_ = true;
-                return true;
-            }
-            return acceptPendingRange();
-        }
-        if (key == Qt::Key_Escape) {
-            if (activeRequestId_ > 0 && activeRequestMode_ == QStringLiteral("range")) {
-                cancelActiveGeneration();
-            }
-            rejectPendingRange();
-            return true;
-        }
-        if (!rangeStreaming_ && key == Qt::Key_R && !ctrl && !alt) {
-            regeneratePendingRange();
-            return true;
-        }
-        if (!rangeStreaming_ && key == Qt::Key_Space && !ctrl && !alt) {
-            auditionPendingRange();
-            return true;
-        }
-    }
-
     if (ghostActive_) {
-        if (plainTab) {
-            if (ghostStreaming_) {
-                pendingAcceptAfterStream_ = true;
-                return true;
-            }
-            return acceptFullGhost();
-        }
         if (!ghostStreaming_ && key == Qt::Key_Right && ctrl && !shift && !alt) {
             return acceptNextGhostStep();
         }
@@ -2322,17 +2175,6 @@ bool NoaCopilotModel::handleEditorKeyPress(int key, int modifiers)
         }
     }
 
-    if (inlineCardVisible_) {
-        if (key == Qt::Key_Escape) {
-            closeInlineCard();
-            return true;
-        }
-        if ((key == Qt::Key_Return || key == Qt::Key_Enter) && !ctrl && !shift && !alt) {
-            triggerRangeGenerate();
-            return true;
-        }
-    }
-
     if (key == Qt::Key_Escape && (fullStreamingActive_ || activeRequestId_ > 0)) {
         cancelActiveGeneration();
         return true;
@@ -2340,7 +2182,7 @@ bool NoaCopilotModel::handleEditorKeyPress(int key, int modifiers)
 
     // When NoaCopilot is enabled, plain Tab triggers continuation instead of
     // Scintilla's default tab/indent block fill; disabling NoaCopilot restores Tab.
-    if (plainTab && !inlineCardVisible_ && !fullStreamingActive_
+    if (plainTab && !fullStreamingActive_
         && document_.hasDocument() && document_.currentDifficultyId() > 0
         && !document_.wholeSourceEditorActive()) {
         if (!busy()) {
@@ -2357,7 +2199,7 @@ void NoaCopilotModel::triggerManualContinue()
     if (!enabled_ || !document_.hasDocument() || document_.currentDifficultyId() <= 0) {
         return;
     }
-    sendSuggestRequest(QStringLiteral("continue"), 4, false, QString(), QString());
+    sendSuggestRequest(QStringLiteral("continue"), QString(), QString());
 }
 
 bool NoaCopilotModel::acceptFullGhost()
@@ -2502,6 +2344,7 @@ void NoaCopilotModel::dismissGhost()
     discardCandidates();
     pendingAcceptAfterStream_ = false;
     if (!ghostActive_ && !ghostStreaming_ && ghostText_.isEmpty() && ghostReplaceStart_ == 0 && ghostReplaceEnd_ == 0) {
+        emit ghostStateChanged();
         updateEditorGhostStrike();
         return;
     }
@@ -2519,7 +2362,7 @@ void NoaCopilotModel::dismissGhost()
     ghostCurrentStep_ = 0;
     emit ghostStateChanged();
     updateEditorGhostStrike();
-    if (!pendingRangeActive_ && !fullStreamingActive_) {
+    if (!fullStreamingActive_) {
         clearDualSurfaceGhostPreview();
     }
 }
@@ -2527,129 +2370,12 @@ void NoaCopilotModel::dismissGhost()
 void NoaCopilotModel::dismissAllActivePreviews()
 {
     if (activeRequestId_ > 0
-        && (activeRequestMode_ == QStringLiteral("continue") || activeRequestMode_ == QStringLiteral("range"))) {
+        && activeRequestMode_ == QStringLiteral("continue")) {
         cancelActiveGeneration();
     }
     if (ghostActive_ || ghostStreaming_) {
         dismissGhost();
     }
-    if (pendingRangeActive_ || rangeStreaming_) {
-        rejectPendingRange();
-    }
-}
-
-void NoaCopilotModel::openInlineCard()
-{
-    if (!enabled_ || !document_.hasDocument() || document_.currentDifficultyId() <= 0) {
-        return;
-    }
-    if (hasSkeleton(false)) { triggerManualContinue(); return; }
-    dismissGhost();
-    if (pendingRangeActive_) {
-        rejectPendingRange();
-    }
-    inlineLevelOverride_ = document_.currentDifficultyLevel();
-    inlineDesignerOverride_ = defaultDesigner_;
-    inlineCardVisible_ = true;
-    emit inlineCardChanged();
-}
-
-void NoaCopilotModel::closeInlineCard()
-{
-    if (!inlineCardVisible_) {
-        return;
-    }
-    inlineCardVisible_ = false;
-    emit inlineCardChanged();
-}
-
-void NoaCopilotModel::requestRangeGeneration(
-    int spanBeats,
-    bool fillToNext,
-    const QString& levelOverride,
-    const QString& designerOverride)
-{
-    const int requestedBeats = (spanBeats >= 0) ? spanBeats : inlineSpanBeats_;
-    lastRangeFillToNext_ = fillToNext || (requestedBeats == 0) || inlineFillToNext_;
-    lastRangeSpanBeats_ = requestedBeats > 0 ? requestedBeats : 8;
-    lastRangeLevelOverride_ = levelOverride.isEmpty() ? inlineLevelOverride_ : levelOverride;
-    lastRangeDesignerOverride_ = designerOverride.isEmpty() ? inlineDesignerOverride_ : designerOverride;
-    sendSuggestRequest(
-        QStringLiteral("range"),
-        lastRangeSpanBeats_,
-        lastRangeFillToNext_,
-        lastRangeLevelOverride_,
-        lastRangeDesignerOverride_);
-}
-
-void NoaCopilotModel::triggerRangeGenerate()
-{
-    requestRangeGeneration(
-        inlineSpanBeats_,
-        inlineFillToNext_ || (inlineSpanBeats_ == 0),
-        inlineLevelOverride_,
-        inlineDesignerOverride_);
-}
-
-bool NoaCopilotModel::acceptPendingRange()
-{
-    if (!pendingRangeActive_) {
-        return false;
-    }
-    const QString text = pendingRangeText_;
-    const int startPos = pendingReplaceStart_;
-    const int endPos = pendingReplaceEnd_;
-    pendingRangeActive_ = false;
-    pendingRangeText_.clear();
-    pendingReplaceStart_ = 0;
-    pendingReplaceEnd_ = 0;
-    emit pendingRangeChanged();
-    updateEditorGhostStrike();
-    preview_.setPlaybackRangeEnabled(false, 0.0, 0.0);
-    clearDualSurfaceGhostPreview();
-    return applyEditorReplacement(startPos, endPos, text);
-}
-
-void NoaCopilotModel::regeneratePendingRange()
-{
-    if (!pendingRangeActive_) {
-        return;
-    }
-    sendSuggestRequest(
-        QStringLiteral("range"),
-        lastRangeSpanBeats_,
-        lastRangeFillToNext_,
-        lastRangeLevelOverride_,
-        lastRangeDesignerOverride_);
-}
-
-void NoaCopilotModel::auditionPendingRange()
-{
-    if (!pendingRangeActive_) {
-        return;
-    }
-    const double startSec = qMax(0.0, pendingStartSecond_ - 0.5);
-    const double endSec = qMax(startSec + 1.0, pendingEndSecond_ + 0.5);
-    preview_.setPlaybackRangeEnabled(true, startSec, endSec);
-    preview_.setPositionSeconds(startSec);
-    preview_.setPlaying(true);
-}
-
-void NoaCopilotModel::rejectPendingRange()
-{
-    pendingAcceptAfterStream_ = false;
-    if (!pendingRangeActive_ && !rangeStreaming_) {
-        return;
-    }
-    pendingRangeActive_ = false;
-    rangeStreaming_ = false;
-    pendingRangeText_.clear();
-    pendingReplaceStart_ = 0;
-    pendingReplaceEnd_ = 0;
-    emit pendingRangeChanged();
-    updateEditorGhostStrike();
-    preview_.setPlaybackRangeEnabled(false, 0.0, 0.0);
-    clearDualSurfaceGhostPreview();
 }
 
 void NoaCopilotModel::dismissEmptyCard()
@@ -2666,10 +2392,7 @@ void NoaCopilotModel::requestFullChartGeneration(
         return;
     }
     dismissGhost();
-    if (pendingRangeActive_) {
-        rejectPendingRange();
-    }
-    sendSuggestRequest(QStringLiteral("full"), 4, false, levelOverride, designerOverride);
+    sendSuggestRequest(QStringLiteral("full"), levelOverride, designerOverride);
 }
 
 void NoaCopilotModel::cancelActiveGeneration()
@@ -2687,12 +2410,9 @@ void NoaCopilotModel::cancelActiveGeneration()
         ghostStreaming_ = false;
         dismissGhost();
     }
-    if (rangeStreaming_) {
-        rangeStreaming_ = false;
-        rejectPendingRange();
-    }
     endFullStream();
     discardCandidates();
+    emit ghostStateChanged();
     if (checkpointLoadedInDaemon_) {
         updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
     }

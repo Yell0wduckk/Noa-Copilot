@@ -57,6 +57,7 @@ class WorkbenchSettings final : public QObject
     Q_PROPERTY(bool editorAutoWrap READ editorAutoWrap WRITE setEditorAutoWrap NOTIFY editorSettingsChanged)
     Q_PROPERTY(bool editorScrollPastEnd READ editorScrollPastEnd WRITE setEditorScrollPastEnd NOTIFY editorSettingsChanged)
     Q_PROPERTY(bool editorSelectionBeatDisplay READ editorSelectionBeatDisplay WRITE setEditorSelectionBeatDisplay NOTIFY editorSettingsChanged)
+    Q_PROPERTY(bool editorSpacePlaysPreview READ editorSpacePlaysPreview WRITE setEditorSpacePlaysPreview NOTIFY editorSettingsChanged)
     Q_PROPERTY(bool editorOverviewRulerEnabled READ editorOverviewRulerEnabled WRITE setEditorOverviewRulerEnabled NOTIFY editorSettingsChanged)
 
 public:
@@ -110,6 +111,7 @@ public:
     void setEditorAutoWrap(bool enabled);
     bool editorScrollPastEnd() const;
     bool editorSelectionBeatDisplay() const;
+    bool editorSpacePlaysPreview() const;
     bool editorOverviewRulerEnabled() const;
 
     void setEfficientSidebarEnabled(bool value);
@@ -130,6 +132,7 @@ public:
     void setEditorAppearance(int pointSize, double lineSpacingFactor);
     void setEditorScrollPastEnd(bool enabled);
     void setEditorSelectionBeatDisplay(bool enabled);
+    void setEditorSpacePlaysPreview(bool enabled);
     void setEditorOverviewRulerEnabled(bool enabled);
 
 signals:
@@ -186,6 +189,7 @@ private:
     bool editorAutoWrap_ = true;
     bool editorScrollPastEnd_ = true;
     bool editorSelectionBeatDisplay_ = true;
+    bool editorSpacePlaysPreview_ = true;
     bool editorOverviewRulerEnabled_ = false;
     bool darkTheme_ = true;
     QString publishedThemeModeToken_;

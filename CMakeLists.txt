@@ -703,7 +703,7 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/chrome/NoaCopilotStatusPill.qml
     src/app/ui/chrome/NoaTemperatureSlider.qml
     src/app/ui/editor/NoaCopilotGhostOverlay.qml
-    src/app/ui/editor/NoaCopilotInlineCard.qml
+    src/app/ui/editor/NoaCandidateShortcuts.qml
     src/app/ui/editor/NoaCopilotEmptyCard.qml
     src/app/ui/layout/MainView.qml
     src/app/ui/layout/MainSplitView.qml

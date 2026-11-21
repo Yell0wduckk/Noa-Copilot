@@ -16,8 +16,6 @@ Item {
 
     readonly property bool ghostVisible: root.noaCopilot
         && root.noaCopilot.ghostActive
-        && !root.noaCopilot.inlineCardVisible
-        && !root.noaCopilot.pendingRangeActive
         && root.editor
         && !root.editor.readonly
     readonly property rect caretRect: root.editor ? root.editor.cursorRectangle : Qt.rect(0, 0, 2, 18)

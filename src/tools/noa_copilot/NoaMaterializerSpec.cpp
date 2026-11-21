@@ -140,6 +140,18 @@ int main(int argc,char** argv)
         || noaWarmTimingText(QStringLiteral("(150)1,,(180)x,")) == noaWarmTimingText(QStringLiteral("(150)1,(180)x,"))
         || !noaWarmTimingText(QStringLiteral("1,2,|| (100)\nE")).isEmpty()) return 1;
     if (!auditionSequence()) { qWarning()<<"audition sound-table mismatch"; return 1; }
+    NoaMaterializer partial;
+    partial.begin({{"mode", "continue"}, {"start", 192}, {"stop", 576}, {"origin", 0},
+                   {"division", 4}, {"initial_bpm", 120},
+                   {"cuts", QJsonArray{QJsonObject{{"tick", 288}, {"next_tick", 288}}}}}, {}, 3);
+    partial.advance(288);
+    partial.finish();
+    if (partial.text() != QStringLiteral(",\n{4},,,\n")
+        || partial.step(0)["accept_text"].toString() != QStringLiteral(",\n")
+        || partial.step(0)["preview_remaining_text"].toString() != QStringLiteral("{4},,,\n")) {
+        qWarning() << "custom continuation rows" << partial.text();
+        return 1;
+    }
     const QString start="(120){4}1h[1:1],x,*,4,\n";
     const QString suffix="{8}2-5[4:1],3,4,5,\n(180){4}6,x**,8,\nE";
     std::shared_ptr<SimaiLineCache> cache;

@@ -704,6 +704,13 @@ AppDialog {
                             }
 
                             PreferenceSwitch {
+                                objectName: "preferencesEditorSpacePlaysPreviewSwitch"
+                                text: qsTrId("preferences.editor_space_plays_preview")
+                                checked: root.preferencesModel.editorSpacePlaysPreview
+                                onToggled: root.preferencesModel.editorSpacePlaysPreview = checked
+                            }
+
+                            PreferenceSwitch {
                                 objectName: "preferencesOverviewRulerSwitch"
                                 text: qsTrId("preferences.editor_overview_ruler")
                                 checked: root.preferencesModel.editorOverviewRulerEnabled
@@ -1072,6 +1079,21 @@ AppDialog {
                             }
                         }
 
+                        PreferenceSlider {
+                            label: "续写行数"
+                            suffix: " 行"
+                            from: 1; to: 64; stepSize: 1; decimals: 0
+                            value: root.noaCopilot?.continuationLines ?? 4
+                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.continuationLines = Math.round(v) }
+                        }
+                        PreferenceSlider {
+                            label: "每行拍数"
+                            suffix: " 拍"
+                            from: 1; to: 64; stepSize: 1; decimals: 0
+                            value: root.noaCopilot?.lineAlignBeats ?? 4
+                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.lineAlignBeats = Math.round(v) }
+                        }
+
                         NoaTemperatureSlider {
                             label: "采样温度"
                             labelWidth: root.settingsLabelWidth
@@ -1237,8 +1259,7 @@ AppDialog {
                                 title: "采样与预计算"
 
                                 Repeater {
-                                    model: [{key:"lineAlignBeats",title:"每行对齐拍数",max:32},
-                                            {key:"candidateCount",title:"预计算序列数量",max:8},
+                                    model: [{key:"candidateCount",title:"预计算序列数量",max:8},
                                             {key:"cpuThreads",title:"CPU 推理线程",max:64}]
                                     delegate: PreferenceSlider {
                                         required property var modelData

@@ -396,6 +396,7 @@ Item {
         analysisSession: root.analysisSession
         preferences: root.preferences
         noaCopilot: root.noaCopilot
+        onPreviewPlaybackRequested: root.previewSession.togglePlayback()
         onNormalizeChartRequested: root.pages.openNormalizeWholeChart()
         onCompletionSettingsRequested: function(group) { root.completionSettingsRequested(group) }
     }

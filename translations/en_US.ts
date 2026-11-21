@@ -3241,6 +3241,10 @@ The file may be open in preview, a media player, File Explorer preview pane, or 
         <source>Show selection beat count</source>
         <translation>Show selection beat count</translation>
     </message>
+    <message id="preferences.editor_space_plays_preview">
+        <source>Play or pause the chart preview with Space in the editor</source>
+        <translation>Play or pause the chart preview with Space in the editor</translation>
+    </message>
     <message id="preferences.editor_overview_ruler">
         <source>Overview ruler</source>
         <translation>Overview ruler</translation>

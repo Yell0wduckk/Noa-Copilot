@@ -20,6 +20,7 @@ public:
     int lineCount() const { return editor_.send(SCI_GETLINECOUNT); }
     int lineStart(int line) const { return editor_.send(SCI_INDEXPOSITIONFROMLINE, line, SC_LINECHARACTERINDEX_UTF16); }
     int lineAt(int position) const;
+    bool caretInLineComment() const;
     void captureViewport();
     bool restoreViewport();
     int bytePosition(int utf16) const;

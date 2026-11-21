@@ -207,6 +207,8 @@ Item {
         }
         IconButton {
             id: playButton
+            objectName: "previewPlayPauseButton"
+            focusPolicy: Qt.StrongFocus
             Layout.preferredWidth: implicitWidth
             Layout.preferredHeight: implicitHeight
             iconSource: Qt.resolvedUrl(root.previewSession.playing ? "icons/pause.svg" : "icons/play.svg")

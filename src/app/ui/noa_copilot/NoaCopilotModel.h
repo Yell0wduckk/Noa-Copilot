@@ -65,6 +65,8 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QString precisionMode READ precision WRITE setPrecision NOTIFY configChanged)
     Q_PROPERTY(QVariantList precisionModeOptions READ precisionModeOptions CONSTANT)
 
+    Q_PROPERTY(bool candidateSessionActive READ candidateSessionActive NOTIFY ghostStateChanged)
+    Q_PROPERTY(int continuationLines READ continuationLines WRITE setContinuationLines NOTIFY configChanged)
     Q_PROPERTY(int lineAlignBeats READ lineAlignBeats WRITE setLineAlignBeats NOTIFY configChanged)
     Q_PROPERTY(int candidateCount READ candidateCount WRITE setCandidateCount NOTIFY configChanged)
     Q_PROPERTY(int cpuThreads READ cpuThreads WRITE setCpuThreads NOTIFY configChanged)
@@ -113,23 +115,7 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(int ghostStepCount READ ghostStepCount NOTIFY ghostStateChanged)
     Q_PROPERTY(int ghostCurrentStep READ ghostCurrentStep NOTIFY ghostStateChanged)
 
-    // ---- Workflow 2: Inline Range Card (Ctrl+K) & Pending Review ----
-    Q_PROPERTY(bool inlineCardVisible READ inlineCardVisible WRITE setInlineCardVisible NOTIFY inlineCardChanged)
-    Q_PROPERTY(int inlineSpanBeats READ inlineSpanBeats WRITE setInlineSpanBeats NOTIFY inlineCardChanged)
-    Q_PROPERTY(bool inlineFillToNext READ inlineFillToNext WRITE setInlineFillToNext NOTIFY inlineCardChanged)
-    Q_PROPERTY(QString inlineLevelOverride READ inlineLevelOverride WRITE setInlineLevelOverride NOTIFY inlineCardChanged)
-    Q_PROPERTY(QString inlineDesignerOverride READ inlineDesignerOverride WRITE setInlineDesignerOverride NOTIFY inlineCardChanged)
-    Q_PROPERTY(bool pendingRangeActive READ pendingRangeActive NOTIFY pendingRangeChanged)
-    Q_PROPERTY(bool rangeStreaming READ rangeStreaming NOTIFY pendingRangeChanged)
-    Q_PROPERTY(QString pendingRangeText READ pendingRangeText NOTIFY pendingRangeChanged)
-    Q_PROPERTY(int pendingReplaceStart READ pendingReplaceStart NOTIFY pendingRangeChanged)
-    Q_PROPERTY(int pendingReplaceEnd READ pendingReplaceEnd NOTIFY pendingRangeChanged)
-    Q_PROPERTY(double pendingStartSecond READ pendingStartSecond NOTIFY pendingRangeChanged)
-    Q_PROPERTY(double pendingEndSecond READ pendingEndSecond NOTIFY pendingRangeChanged)
-    Q_PROPERTY(int pendingNoteCount READ pendingNoteCount NOTIFY pendingRangeChanged)
-    Q_PROPERTY(int pendingRangeNoteCount READ pendingNoteCount NOTIFY pendingRangeChanged)
-
-    // ---- Workflow 3: Empty Difficulty Onboarding & Full-Chart Streaming ----
+    // ---- Empty Difficulty Onboarding & Full-Chart Streaming ----
     Q_PROPERTY(bool emptyCardVisible READ emptyCardVisible NOTIFY emptyCardChanged)
     Q_PROPERTY(bool fullStreamingActive READ fullStreamingActive NOTIFY streamingProgressChanged)
     Q_PROPERTY(double streamingProgress READ streamingProgress NOTIFY streamingProgressChanged)
@@ -223,32 +209,15 @@ public:
     int ghostStepCount() const { return static_cast<int>(ghostSteps_.size()); }
     int ghostCurrentStep() const { return ghostCurrentStep_; }
 
-    bool inlineCardVisible() const { return inlineCardVisible_; }
-    void setInlineCardVisible(bool visible);
-    int inlineSpanBeats() const { return inlineSpanBeats_; }
-    void setInlineSpanBeats(int beats);
-    bool inlineFillToNext() const { return inlineFillToNext_; }
-    void setInlineFillToNext(bool fill);
-    QString inlineLevelOverride() const { return inlineLevelOverride_; }
-    void setInlineLevelOverride(const QString& level);
-    QString inlineDesignerOverride() const { return inlineDesignerOverride_; }
-    void setInlineDesignerOverride(const QString& designer);
-
-    bool pendingRangeActive() const { return pendingRangeActive_; }
-    bool rangeStreaming() const { return rangeStreaming_; }
-    QString pendingRangeText() const { return pendingRangeText_; }
-    int pendingReplaceStart() const { return pendingReplaceStart_; }
-    int pendingReplaceEnd() const { return pendingReplaceEnd_; }
-    double pendingStartSecond() const { return pendingStartSecond_; }
-    double pendingEndSecond() const { return pendingEndSecond_; }
-    int pendingNoteCount() const { return pendingNoteCount_; }
-
     bool emptyCardVisible() const;
     bool fullStreamingActive() const { return fullStreamingActive_; }
     double streamingProgress() const { return streamingProgress_; }
     int streamingBeat() const { return streamingBeat_; }
     int streamingTotalBeats() const { return streamingTotalBeats_; }
 
+    bool candidateSessionActive() const;
+    int continuationLines() const { return continuationLines_; }
+    void setContinuationLines(int value);
     int lineAlignBeats() const { return lineAlignBeats_; }
     void setLineAlignBeats(int value);
     int candidateCount() const { return candidateCount_; }
@@ -285,6 +254,7 @@ public:
     // ---- Editor & UI Invokables ----
     Q_INVOKABLE void bindEditor(QObject* editorObject);
     Q_INVOKABLE void notifyEditorCursorOrTextChanged(int cursorPos, int selStart, int selEnd, bool textChanged);
+    Q_INVOKABLE bool handleCandidateKey(int key);
     Q_INVOKABLE bool handleEditorKeyPress(int key, int modifiers);
 
     Q_INVOKABLE void triggerManualContinue();
@@ -294,19 +264,6 @@ public:
     Q_INVOKABLE bool acceptGhostNextStep() { return acceptNextGhostStep(); }
     Q_INVOKABLE void dismissGhost();
     Q_INVOKABLE void dismissAllActivePreviews();
-
-    Q_INVOKABLE void openInlineCard();
-    Q_INVOKABLE void closeInlineCard();
-    Q_INVOKABLE void requestRangeGeneration(
-        int spanBeats = -1,
-        bool fillToNext = false,
-        const QString& levelOverride = QString(),
-        const QString& designerOverride = QString());
-    Q_INVOKABLE void triggerRangeGenerate();
-    Q_INVOKABLE bool acceptPendingRange();
-    Q_INVOKABLE void regeneratePendingRange();
-    Q_INVOKABLE void auditionPendingRange();
-    Q_INVOKABLE void rejectPendingRange();
 
     Q_INVOKABLE void dismissEmptyCard();
     Q_INVOKABLE void dismissEmptyCardForCurrentChart() { dismissEmptyCard(); }
@@ -340,8 +297,6 @@ signals:
     void designerOptionsChanged();
     void cacheInfoChanged();
     void ghostStateChanged();
-    void inlineCardChanged();
-    void pendingRangeChanged();
     void emptyCardChanged();
     void streamingProgressChanged();
 
@@ -363,8 +318,6 @@ private:
     void sendSyncChartIfNeeded();
     void sendSuggestRequest(
         const QString& mode,
-        int spanBeats,
-        bool fillToNext,
         const QString& levelOverride,
         const QString& designerOverride);
     void writeDaemonJson(const QJsonObject& payload);
@@ -396,6 +349,7 @@ private:
     QPointer<QObject> editorBridge_;
 
     int lineAlignBeats_ = 4;
+    int continuationLines_ = 4;
     int candidateCount_ = 3;
     int cpuThreads_ = 4;
     bool mertCache_ = true;
@@ -445,7 +399,7 @@ private:
     void requestMore();
     QJsonObject chartRequest() const;
     void warmSong();
-    bool hasSkeleton(bool selectionOnly) const;
+    bool selectionHasSkeleton() const;
     // ---- Preferences ----
     bool enabled_ = true;
     QString defaultDesigner_;
@@ -506,25 +460,6 @@ private:
     int ghostBridgeLen_ = 0;
     QJsonArray ghostSteps_;
     int ghostCurrentStep_ = 0;
-
-    // ---- Inline Card & Pending Range State ----
-    bool inlineCardVisible_ = false;
-    int inlineSpanBeats_ = 4;
-    bool inlineFillToNext_ = false;
-    QString inlineLevelOverride_;
-    QString inlineDesignerOverride_;
-    bool pendingRangeActive_ = false;
-    bool rangeStreaming_ = false;
-    QString pendingRangeText_;
-    int pendingReplaceStart_ = 0;
-    int pendingReplaceEnd_ = 0;
-    double pendingStartSecond_ = 0.0;
-    double pendingEndSecond_ = 0.0;
-    int pendingNoteCount_ = 0;
-    int lastRangeSpanBeats_ = 4;
-    bool lastRangeFillToNext_ = false;
-    QString lastRangeLevelOverride_;
-    QString lastRangeDesignerOverride_;
 
     // ---- Empty Card & Full Streaming State ----
     int dismissedEmptyDifficultyId_ = -1;

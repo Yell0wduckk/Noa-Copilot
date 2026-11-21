@@ -126,6 +126,14 @@ int ScintillaDocumentAdapter::lineAt(int position) const
 {
     return editor_.send(SCI_LINEFROMINDEXPOSITION, position, SC_LINECHARACTERINDEX_UTF16);
 }
+
+bool ScintillaDocumentAdapter::caretInLineComment() const
+{
+    const int caret = editor_.send(SCI_GETCURRENTPOS);
+    const int start = lineStart(editor_.send(SCI_LINEFROMPOSITION, caret));
+    return QStringView(text_).sliced(start, utf16Position(caret) - start).contains(QLatin1String("||"));
+}
+
 int ScintillaDocumentAdapter::applyChange(const ScintillaQuick_notification& change)
 {
     const int start = utf16Position(change.position);

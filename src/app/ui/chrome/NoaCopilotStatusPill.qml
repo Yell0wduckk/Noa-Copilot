@@ -227,17 +227,6 @@ Item {
                 AppButton {
                     Layout.fillWidth: true
                     implicitHeight: Theme.compactControlHeight + 2
-                    text: "段落 (Ctrl+K)"
-                    enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                    onClicked: {
-                        statusPopup.close()
-                        if (root.noaCopilot) root.noaCopilot.openInlineCard()
-                    }
-                }
-
-                AppButton {
-                    Layout.fillWidth: true
-                    implicitHeight: Theme.compactControlHeight + 2
                     text: "整曲初稿"
                     enabled: root.noaCopilot ? (root.noaCopilot.enabled && !root.noaCopilot.busy) : false
                     onClicked: {

@@ -12,6 +12,7 @@ Rectangle {
     required property var syncController
     required property var analysisSession
     property var preferences: null
+    signal previewPlaybackRequested()
     property var noaCopilot: null
     onNoaCopilotChanged: {
         if (root.noaCopilot)
@@ -319,8 +320,7 @@ Rectangle {
                 rows.push({ kind: "submenu", labelKey: "action.transform.more", operation: "" })
             if (root.noaCopilot && root.noaCopilot.enabled && !sourceArea.readonly) {
                 separator()
-                action("NoaCopilot: 续写当前拍 (Tab)", "noa_continue")
-                action("NoaCopilot: 段落生成 (Ctrl+K)", "noa_inline")
+                action("NoaCopilot: 续写 (Tab)", "noa_continue")
                 action("NoaCopilot: 生成整曲初稿", "noa_full")
             }
             menuEntries.clear()
@@ -341,7 +341,6 @@ Rectangle {
             case "export": root.exportSelectionRange(); break
             case "normalize": root.normalizeChartRequested(); break
             case "noa_continue": if (root.noaCopilot) root.noaCopilot.triggerManualContinue(); break
-            case "noa_inline": if (root.noaCopilot) root.noaCopilot.openInlineCard(); break
             case "noa_full": if (root.noaCopilot) root.noaCopilot.triggerFullChartStream(); break
             default: root.applyChartTransform(operation); break
             }
@@ -427,6 +426,8 @@ Rectangle {
         id: sourceArea
         objectName: "sourceArea"
         property bool reservesPlainSpace: true
+        spacePlaysPreview: root.viewState.difficultyEditorActive && (root.preferences?.editorSpacePlaysPreview ?? true)
+        onPreviewPlaybackRequested: root.previewPlaybackRequested()
         anchors.left: parent.left
         anchors.right: verticalBar.left
         anchors.top: findReplaceBar.bottom
@@ -491,19 +492,11 @@ Rectangle {
                 root.editorController.closeCompletion()
         }
         onFindRequested: root.openFindReplace()
-        onInlineCopilotRequested: {
-            if (root.noaCopilot)
-                root.noaCopilot.openInlineCard()
-        }
         onManualGhostRequested: {
             if (root.noaCopilot)
                 root.noaCopilot.triggerManualContinue()
         }
         NoaCopilotGhostOverlay {
-            editor: sourceArea
-            noaCopilot: root.noaCopilot
-        }
-        NoaCopilotInlineCard {
             editor: sourceArea
             noaCopilot: root.noaCopilot
         }

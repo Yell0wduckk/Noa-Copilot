@@ -3241,6 +3241,10 @@ The file may be open in preview, a media player, File Explorer preview pane, or 
         <source>Show selection beat count</source>
         <translation>選択範囲の拍数を表示</translation>
     </message>
+    <message id="preferences.editor_space_plays_preview">
+        <source>Play or pause the chart preview with Space in the editor</source>
+        <translation>エディターのスペースキーで譜面プレビューを再生・一時停止</translation>
+    </message>
     <message id="preferences.editor_overview_ruler">
         <source>Overview ruler</source>
         <translation>概覧ルーラー</translation>

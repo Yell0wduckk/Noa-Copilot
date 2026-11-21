@@ -219,6 +219,11 @@ ApplicationWindow {
         onChartTransformRequested: opId => mainView.applyChartTransform(opId)
     }
 
+    NoaCandidateShortcuts {
+        noaCopilot: window.applicationContext.noaCopilot
+        enabled: window.active && mainView.editorCommandsAvailable && !window.sourceEditorFocused
+    }
+
     UiScaleShortcuts {
         shortcuts: window.applicationContext.shortcuts
         preferencesModel: window.applicationContext.preferencesModel

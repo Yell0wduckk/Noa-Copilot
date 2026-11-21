@@ -1146,8 +1146,9 @@ void ScintillaEditorBridge::keyPressEvent(QKeyEvent* event)
     if (event->matches(QKeySequence::Copy)) { copy(); event->accept(); return; }
     if (event->matches(QKeySequence::Paste)) { paste(); event->accept(); return; }
     if (event->matches(QKeySequence::SelectAll)) { selectAll(); event->accept(); return; }
-    if (event->key() == Qt::Key_K && event->modifiers() == Qt::ControlModifier) {
-        emit inlineCopilotRequested();
+    if (spacePlaysPreview_ && event->key() == Qt::Key_Space && event->modifiers() == Qt::NoModifier
+        && !imeComposing_ && !document_.caretInLineComment()) {
+        if (!event->isAutoRepeat()) emit previewPlaybackRequested();
         event->accept();
         return;
     }

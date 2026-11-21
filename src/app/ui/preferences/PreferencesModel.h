@@ -55,6 +55,7 @@ public:
     Q_PROPERTY(bool editorAutoWrap READ editorAutoWrap WRITE setEditorAutoWrap NOTIFY editorChanged)
     Q_PROPERTY(bool editorScrollPastEnd READ editorScrollPastEnd WRITE setEditorScrollPastEnd NOTIFY editorChanged)
     Q_PROPERTY(bool editorSelectionBeatDisplay READ editorSelectionBeatDisplay WRITE setEditorSelectionBeatDisplay NOTIFY editorChanged)
+    Q_PROPERTY(bool editorSpacePlaysPreview READ editorSpacePlaysPreview WRITE setEditorSpacePlaysPreview NOTIFY editorChanged)
     Q_PROPERTY(bool editorOverviewRulerEnabled READ editorOverviewRulerEnabled WRITE setEditorOverviewRulerEnabled NOTIFY editorChanged)
 
     Q_PROPERTY(QAbstractItemModel* completionDurations READ completionDurations CONSTANT)
@@ -130,8 +131,10 @@ public:
     bool editorScrollPastEnd() const;
     void setEditorScrollPastEnd(bool enabled);
     bool editorSelectionBeatDisplay() const;
+    bool editorSpacePlaysPreview() const;
     bool editorOverviewRulerEnabled() const;
     void setEditorSelectionBeatDisplay(bool enabled);
+    void setEditorSpacePlaysPreview(bool enabled);
     void setEditorOverviewRulerEnabled(bool enabled);
 
     bool videoDecodePrefersSoftware() const;

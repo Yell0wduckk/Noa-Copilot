@@ -52,6 +52,18 @@ bool testEditor(QTextStream& out, const QString& capturePath)
             document.applyChange(notification);
         });
 
+    const QString withComment = QStringLiteral("(120){4}1,|| 🌙 注释\n{4}2,");
+    document.activate(QStringLiteral("space"), withComment);
+    const int marker = withComment.indexOf(QStringLiteral("||"));
+    for (int position : {marker, marker + 2, int(withComment.indexOf('\n')), int(withComment.size())}) {
+        editor.send(SCI_GOTOPOS, document.bytePosition(position));
+        const bool expected = position >= marker + 2 && position <= withComment.indexOf('\n');
+        if (document.caretInLineComment() != expected) {
+            out << "wrong Space handling at UTF-16 position " << position << Qt::endl;
+            return false;
+        }
+    }
+
     // Ghost updates replace the same native range with undo collection disabled.
     // A shortened or retracted candidate must disappear from the UTF-16 shadow too.
     const QString prefix = QStringLiteral("|| 🌙\n(120){4}");
