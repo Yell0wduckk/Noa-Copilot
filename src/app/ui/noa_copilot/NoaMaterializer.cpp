@@ -1,5 +1,7 @@
 #include "app/ui/noa_copilot/NoaMaterializer.h"
 
+#include "core/chart/model/TimelineMarkerOffset.h"
+
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -77,6 +79,19 @@ QString standalone(QString fragment, int division)
         fragment.insert(i, QStringLiteral("{%1}").arg(division));
     return fragment;
 }
+}
+
+TimelineAuditionMarkers noaAuditionMarkers(const QString& chart, const NoaAuditionRange& range,
+    double first, const miacode::simai::SimaiTimingMetadata& timing, std::shared_ptr<SimaiLineCache>& cache)
+{
+    using namespace miacode::timeline::offset;
+    const auto parsed = SimaiParser::parseIncremental(chart, timing, cache);
+    TimelineAuditionMarkers result;
+    result.playback = shiftedNoteMarkers(parsed.noteMarkers, first, NonFiniteHandling::PassThrough);
+    for (const auto& note : std::as_const(result.playback)) {
+        (range.contains(note.sourceLine, note.sourceCol) ? result.ghost : result.normal).append(note);
+    }
+    return result;
 }
 
 // Only leading timing controls through the last BPM affect the audio grid.
@@ -193,6 +208,7 @@ void NoaMaterializer::advance(int tick)
 void NoaMaterializer::moment(int tick, const QJsonArray& notes)
 {
     advance(tick);
+    lastMoment_ = tick;
     int group = -1;
     for (auto value : notes) {
         const auto row = value.toObject();
@@ -226,16 +242,26 @@ void NoaMaterializer::finish()
     done_ = true;
 }
 
-QString NoaMaterializer::skeletonText(int until) const
+QString NoaMaterializer::skeletonText(int until, bool silenceUnwritten) const
 {
     const int left = layout_["left"].toInt();
+    QString source = source_;
+    if (silenceUnwritten) {
+        for (const auto& entry : layout_["skeleton_cells"].toArray()) {
+            const auto cell = entry.toArray();
+            if (cell[0].toInt() <= lastMoment_) continue;
+            const int end = qMin(qsizetype(cell[2].toInt() - left), source.size());
+            for (int i = qMax(0, cell[1].toInt() - left); i < end; ++i)
+                if (!source[i].isSpace()) source[i] = QLatin1Char(' ');
+        }
+    }
     int pos = left;
     QString result;
     for (auto it = replacements_.cbegin(); it != replacements_.cend() && it.key() < until; ++it) {
-        result += source_.mid(pos - left, it.key() - pos) + it->text;
+        result += source.mid(pos - left, it.key() - pos) + it->text;
         pos = it->stop;
     }
-    return result + source_.mid(pos - left, until - pos);
+    return result + source.mid(pos - left, until - pos);
 }
 
 QString NoaMaterializer::rendered(bool preview) const
@@ -262,6 +288,22 @@ QString NoaMaterializer::rendered(bool preview) const
 }
 QString NoaMaterializer::text() const { return rendered(false); }
 QString NoaMaterializer::preview() const { return rendered(true); }
+
+QString NoaMaterializer::auditionText() const
+{
+    if (done_ || full_) return text();
+    if (skeleton_) return skeletonText(layout_["right"].toInt(), true);
+    int division = division_;
+    QString result = layout_["lead"].toString() + confirmed_;
+    int next = cursor_;
+    if (!pending_.isEmpty()) {
+        next = qMin(stop_, cursor_ + 4);
+        result += interval(cursor_, next, division, pending_);
+    }
+    const int tail = layout_["tail_tick"].toInt(stop_);
+    result += interval(next, tail, division, {});
+    return result + restore(layout_, bpm(tail - 1), division);
+}
 
 QJsonObject NoaMaterializer::step(int i) const
 {

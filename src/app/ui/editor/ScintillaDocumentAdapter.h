@@ -16,7 +16,7 @@ public:
     void clear();
     void drop(const QString& scope);
     void refresh();
-    void applyChange(int position, int removedUtf16, const QByteArray& inserted);
+    int applyChange(const ScintillaQuick_notification& change);
     int lineCount() const { return editor_.send(SCI_GETLINECOUNT); }
     int lineStart(int line) const { return editor_.send(SCI_INDEXPOSITIONFROMLINE, line, SC_LINECHARACTERINDEX_UTF16); }
     int lineAt(int position) const;

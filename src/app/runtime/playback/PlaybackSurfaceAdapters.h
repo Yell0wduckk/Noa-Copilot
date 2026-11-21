@@ -63,10 +63,11 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol, bool streaming = false) override;
+        int strikeEndCol, bool streaming = false,
+        const TimelineAuditionMarkers* audition = nullptr) override;
     QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end) override;
     void setCopilotReview(bool active) override;
-    void clearGhostPreviewOverlay() override;
+    void clearGhostPreviewOverlay(bool accepted = false) override;
 
 private:
     PlaybackCoordinator* coordinator_ = nullptr;

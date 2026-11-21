@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "app/runtime/RuntimeContext.h"
 #include <QFuture>
 
@@ -330,10 +332,11 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol, bool streaming = false);
+        int strikeEndCol, bool streaming = false,
+        const TimelineAuditionMarkers* audition = nullptr);
     QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end);
     void setCopilotReview(bool active);
-    void clearGhostPreviewOverlay();
+    void clearGhostPreviewOverlay(bool accepted = false);
 
     QObject* timelineStateBridge() const;
     void noteTimelineSurfaceReady();
@@ -435,6 +438,7 @@ private:
     mutable QVector<TimelineNoteMarker> filteredSource_, filteredNormal_, cachedSfx_;
     QVector<double> prefixEndSeconds_;
     QVector<TimelineNoteMarker> prefixIndexSource_;
+    std::optional<TimelineAuditionMarkers> auditionMarkers_;
     bool transientOverlay_ = false;
     bool overlaySfxPending_ = false;
     mutable bool filteredValid_ = false, sfxValid_ = false;

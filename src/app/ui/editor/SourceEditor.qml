@@ -24,10 +24,7 @@ Rectangle {
             sourceArea.cursorPosition,
             sourceArea.selectionStart,
             sourceArea.selectionEnd,
-            sourceArea.text,
-            sourceArea.imeComposing,
-            root.editorController ? root.editorController.completionActive : false,
-            root.syncController ? root.syncController.followPlaybackActive : false)
+            false)
     }
     readonly property bool overviewRulerEnabled: preferences ? preferences.editorOverviewRulerEnabled : false
     property bool navigationVisible: false
@@ -494,7 +491,6 @@ Rectangle {
                 root.editorController.closeCompletion()
         }
         onFindRequested: root.openFindReplace()
-        onTextChanged: root.notifyNoaCopilotState()
         onInlineCopilotRequested: {
             if (root.noaCopilot)
                 root.noaCopilot.openInlineCard()

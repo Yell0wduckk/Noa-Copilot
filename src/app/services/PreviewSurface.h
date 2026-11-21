@@ -97,7 +97,8 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol, bool streaming = false)
+        int strikeEndCol, bool streaming = false,
+        const TimelineAuditionMarkers* audition = nullptr)
     {
         Q_UNUSED(ghostMarkers);
         Q_UNUSED(strikeActive);
@@ -109,7 +110,7 @@ public:
     virtual QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>&, double, double)
     { return QtFuture::makeReadyValueFuture(0); }
     virtual void setCopilotReview(bool) {}
-    virtual void clearGhostPreviewOverlay() {}
+    virtual void clearGhostPreviewOverlay(bool accepted = false) {}
 
 protected:
     PreviewSurface() = default;

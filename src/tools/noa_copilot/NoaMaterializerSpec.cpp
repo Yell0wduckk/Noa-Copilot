@@ -1,13 +1,18 @@
 #include "app/ui/noa_copilot/NoaMaterializer.h"
 #include "core/analysis/TimelineSlowRefresh.h"
 
+#include "core/scene/PreviewSfxTimeline.h"
+#include "common/GrayscaleImage.h"
+
 #include <QCoreApplication>
 #include <QDebug>
 #include <QFile>
 #include <QJsonDocument>
 #include <cmath>
 
+using miacode::ui::NoaAuditionRange;
 using miacode::ui::NoaMaterializer;
+using miacode::ui::noaAuditionMarkers;
 
 namespace {
 bool compareParses(const QString& text, std::shared_ptr<SimaiLineCache>& cache)
@@ -28,6 +33,65 @@ bool compareParses(const QString& text, std::shared_ptr<SimaiLineCache>& cache)
     for (qsizetype i = 0; i < cold.measureLineSeconds.size(); ++i)
         if (std::abs(incremental.measureLineSeconds[i]-cold.measureLineSeconds[i])>1e-8) return false;
     return true;
+}
+
+bool sameSound(const QVector<TimelineNoteMarker>& heard, const QString& expected)
+{
+    using namespace miacode::preview_sfx_timeline;
+    const auto cold = buildTimelinePreviewRefreshState(SimaiParser::parseForTimeline(expected), 0.125);
+    QVector<Event> actual, reference;
+    QVector<TouchholdSpan> loops, expectedLoops;
+    buildTimeline(heard, 1.0, {}, &actual, &loops);
+    buildTimeline(cold.shiftedNoteMarkers, 1.0, {}, &reference, &expectedLoops);
+    if (actual.size() != reference.size() || loops.size() != expectedLoops.size()) return false;
+    for (int i = 0; i < actual.size(); ++i) {
+        const auto& a = actual[i];
+        const auto& b = reference[i];
+        if (a.kind != b.kind || std::abs(a.second - b.second) > 1e-8 || a.priority != b.priority
+            || a.gain != b.gain || a.spanIndex != b.spanIndex || a.breakSlideTailBreak != b.breakSlideTailBreak) return false;
+    }
+    for (int i = 0; i < loops.size(); ++i)
+        if (std::abs(loops[i].startSecond - expectedLoops[i].startSecond) > 1e-8
+            || std::abs(loops[i].endSecond - expectedLoops[i].endSecond) > 1e-8) return false;
+    return true;
+}
+
+bool auditionSequence()
+{
+    const QString prefix = "(120){4}1-5[2:1]/Ch[2:1],\n{4}";
+    const QString suffix = "\n(180){8}8b,7,\nE";
+    const QString original = prefix + "4b,5-1[4:1]," + suffix;
+    const int left = prefix.size(), right = original.size() - suffix.size();
+    const QJsonObject layout{{"start",96},{"stop",288},{"left",left},{"right",right},{"division",4},
+        {"initial_bpm",120},{"origin",0},{"tempos",QJsonArray{QJsonArray{0,120},QJsonArray{288,180}}},
+        {"cuts",QJsonArray{QJsonObject{{"tick",192},{"position",left+3},{"next_tick",192},{"second",1.0}}}}};
+    NoaMaterializer writer;
+    std::shared_ptr<SimaiLineCache> cache;
+    auto check = [&](QString expected, int ghosts) {
+        const auto text = writer.auditionText();
+        const NoaAuditionRange range{{2,4},{2,4+int(text.size())}};
+        const auto heard = noaAuditionMarkers(prefix + text + suffix,range,.125,{},cache);
+        return heard.ghost.size() == ghosts && heard.normal.size() == 4 &&
+            sameSound(heard.playback, prefix+expected+suffix);
+    };
+    auto tap = [](int pad,int flags) { return QJsonArray{QJsonObject{{"pad",QString::number(pad)},{"flags",flags}}}; };
+    writer.begin(layout,original,4);
+    if (!check(",,",0)) return false;
+    writer.moment(96,tap(3,1));
+    if (!check("3b,,",1)) return false;
+    writer.moment(192,tap(4,2));
+    writer.finish();
+    if (!check("3b,4x,",2) || writer.text()!=writer.auditionText()) return false;
+    const auto step = writer.step(0);
+    const QString committed = prefix + step["accept_text"].toString() + step["escape_bridge"].toString()
+        + original.mid(step["replace_end_u16"].toInt());
+    const auto restored = noaAuditionMarkers(committed, {}, .125, {}, cache);
+    if (!sameSound(restored.playback,prefix+"3b,5-1[4:1],"+suffix)) return false;
+    writer.begin(layout,original,4);
+    if (!check(",,",0)) return false;
+    writer.moment(192,tap(6,0)); writer.finish();
+    if (!check(",6,",1)) return false;
+    return sameSound(noaAuditionMarkers(original, {}, .125, {}, cache).playback, original);
 }
 
 bool replay(const QJsonObject& fixture)
@@ -76,6 +140,10 @@ int main(int argc,char** argv)
         || noaWarmTimingText(edited) != QStringLiteral("(150){8},,{#0.12},(180),")
         || noaWarmTimingText(QStringLiteral("(150)1,,(180)x,")) == noaWarmTimingText(QStringLiteral("(150)1,(180)x,"))
         || !noaWarmTimingText(QStringLiteral("1,2,|| (100)\nE")).isEmpty()) return 1;
+    if (!auditionSequence()) { qWarning()<<"audition sound-table mismatch"; return 1; }
+    QImage image(1,1,QImage::Format_ARGB32);
+    image.setPixelColor(0,0,QColor(240,240,240,128));
+    if (miacode::grayscaleImage(image).pixelColor(0,0) != QColor(180,180,180,128)) return 1;
     const QString start="(120){4}1h[1:1],x,*,4,\n";
     const QString suffix="{8}2-5[4:1],3,4,5,\n(180){4}6,x**,8,\nE";
     std::shared_ptr<SimaiLineCache> cache;

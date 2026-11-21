@@ -65,6 +65,19 @@ bool verifyResetNeverReplaysACachedRevision(QTextStream& err)
     return ok;
 }
 
+bool verifySkeletonsStayOffThePreviewCircle(QTextStream& err)
+{
+    PreviewRuntime runtime;
+    auto notes = tapMarkers(2);
+    notes[0].skeleton = true;
+    runtime.setNoteMarkers(notes);
+    runtime.setGhostNoteMarkers(notes);
+    const auto& frame = runtime.frameState();
+    return require(frame.noteMarkers.size() == 1 && frame.noteMarkers.front().lane == notes[1].lane
+                   && frame.ghostNoteMarkers.size() == 1 && frame.ghostNoteMarkers.front().lane == notes[1].lane,
+                   QStringLiteral("both circle layers contain only resolved notes"), err);
+}
+
 bool verifySetPlayheadIgnoresNonFiniteSeconds(QTextStream& err)
 {
     PreviewRuntime runtime;
@@ -94,6 +107,7 @@ int main(int argc, char** argv)
     QTextStream err(stderr);
     bool ok = verifyResetNeverReplaysACachedRevision(err);
     ok &= verifySetPlayheadIgnoresNonFiniteSeconds(err);
+    ok &= verifySkeletonsStayOffThePreviewCircle(err);
     if (!ok) {
         return 1;
     }

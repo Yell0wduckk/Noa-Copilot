@@ -51,6 +51,8 @@ public:
     void setTimelineData(const TimelineRenderSnapshot& snapshot);
     void replaceTimelineData(const TimelineRenderSnapshot& snapshot, double second, double durationSeconds);
     const TimelineRenderSnapshot& renderSnapshot() const;
+    void setCandidateSnapshots(const TimelineRenderSnapshot& normal, const TimelineRenderSnapshot& ghost);
+    void clearCandidateSnapshots(bool accepted);
     void setGhostSnapshot(const TimelineRenderSnapshot& snapshot);
     const TimelineRenderSnapshot& ghostSnapshot() const;
     void clearGhostRangeCache();
@@ -170,6 +172,8 @@ private:
     void rebuildFilteredSnapshot();
 
     TimelineRenderSnapshot snapshot_;
+    TimelineRenderSnapshot candidateNormal_;
+    bool hasCandidate_ = false;
     TimelineRenderSnapshot filteredSnapshot_;
     bool filteredSnapshotValid_ = false;
     TimelineRenderSnapshot ghostSnapshot_;

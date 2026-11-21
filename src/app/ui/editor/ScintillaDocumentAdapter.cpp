@@ -126,9 +126,27 @@ int ScintillaDocumentAdapter::lineAt(int position) const
 {
     return editor_.send(SCI_LINEFROMINDEXPOSITION, position, SC_LINECHARACTERINDEX_UTF16);
 }
-void ScintillaDocumentAdapter::applyChange(int position, int removedUtf16, const QByteArray& inserted)
+int ScintillaDocumentAdapter::applyChange(const ScintillaQuick_notification& change)
 {
-    text_.replace(utf16Position(position), removedUtf16, QString::fromUtf8(inserted));
+    const int start = utf16Position(change.position);
+    if (int(change.modificationType) & SC_MOD_DELETETEXT) {
+        QByteArray removed = change.text;
+        if (removed.isEmpty() && change.length > 0) {
+            // Scintilla omits deleted text when undo collection is disabled.
+            // The shadow still holds those bytes. Limit the conversion to the edit.
+            removed = QStringView(text_).mid(start, change.length).toUtf8().left(change.length);
+        }
+        const int units = QString::fromUtf8(removed).size();
+        text_.remove(start, units);
+        return units;
+    }
+    QByteArray inserted = change.text;
+    if (inserted.isEmpty() && change.length > 0) {
+        const auto* bytes = reinterpret_cast<const char*>(editor_.send(SCI_GETRANGEPOINTER, change.position, change.length));
+        if (bytes) inserted = QByteArray(bytes, change.length);
+    }
+    text_.insert(start, QString::fromUtf8(inserted));
+    return 0;
 }
 int ScintillaDocumentAdapter::bytePosition(int utf16) const
 {

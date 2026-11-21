@@ -250,7 +250,8 @@ void PlaybackPreviewSurfaceAdapter::setGhostPreviewOverlay(
     int strikeStartLine,
     int strikeStartCol,
     int strikeEndLine,
-    int strikeEndCol, bool streaming)
+    int strikeEndCol, bool streaming,
+    const TimelineAuditionMarkers* audition)
 {
     if (coordinator_ != nullptr) {
         coordinator_->setGhostPreviewOverlay(
@@ -259,7 +260,7 @@ void PlaybackPreviewSurfaceAdapter::setGhostPreviewOverlay(
             strikeStartLine,
             strikeStartCol,
             strikeEndLine,
-            strikeEndCol, streaming);
+            strikeEndCol, streaming, audition);
     }
 }
 
@@ -273,10 +274,10 @@ void PlaybackPreviewSurfaceAdapter::setCopilotReview(bool active)
     if (coordinator_) coordinator_->setCopilotReview(active);
 }
 
-void PlaybackPreviewSurfaceAdapter::clearGhostPreviewOverlay()
+void PlaybackPreviewSurfaceAdapter::clearGhostPreviewOverlay(bool accepted)
 {
     if (coordinator_ != nullptr) {
-        coordinator_->clearGhostPreviewOverlay();
+        coordinator_->clearGhostPreviewOverlay(accepted);
     }
 }
 

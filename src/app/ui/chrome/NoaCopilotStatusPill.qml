@@ -54,7 +54,8 @@ Item {
 
         Text {
             text: root.noaCopilot
-                ? ("NoaCopilot · " + root.noaCopilot.statusMessage)
+                ? ("NoaCopilot · " + (root.noaCopilot.transientHint || root.noaCopilot.statusMessage)
+                    + (root.noaCopilot.candidateLocalIssues > 0 ? " · 局部无理 " + root.noaCopilot.candidateLocalIssues : ""))
                 : "NoaCopilot"
             font.family: Theme.uiFont
             font.pixelSize: Theme.secondaryFontSize
@@ -138,22 +139,6 @@ Item {
                     checked: root.noaCopilot ? root.noaCopilot.enabled : false
                     onToggled: if (root.noaCopilot) root.noaCopilot.enabled = checked
                 }
-            }
-
-            // Auto-continue switch
-            AppSwitch {
-                Layout.fillWidth: true
-                indicatorOnRight: true
-                enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                text: "光标停顿自动续写 (Ghost Note)"
-                checked: root.noaCopilot ? root.noaCopilot.autoContinueEnabled : false
-                onToggled: if (root.noaCopilot) root.noaCopilot.autoContinueEnabled = checked
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1 / root.Screen.devicePixelRatio
-                color: Theme.separatorColor
             }
 
             // Checkpoint Selector

@@ -20,10 +20,6 @@ Item {
         && !root.noaCopilot.pendingRangeActive
         && root.editor
         && !root.editor.readonly
-    readonly property bool ghostOverwriting: root.ghostVisible
-        && root.noaCopilot.ghostReplaceEnd > root.noaCopilot.ghostReplaceStart
-    readonly property bool ghostStreaming: root.ghostVisible
-        && root.noaCopilot.ghostStreaming
     readonly property rect caretRect: root.editor ? root.editor.cursorRectangle : Qt.rect(0, 0, 2, 18)
     readonly property rect ghostStartRect: root.editor && root.editor.inlineGhostActive
         ? root.editor.ghostStartRectangle
@@ -32,75 +28,22 @@ Item {
         ? root.editor.ghostEndRectangle
         : root.caretRect
 
-    // Compact floating action hint pill positioned next to / below the inline Scintilla ghost text
     Rectangle {
-        id: actionHintBadge
-        visible: root.ghostVisible || (root.noaCopilot?.exhaustionHint ?? false)
-        readonly property bool singleLineGhost: Math.abs(root.ghostEndRect.y - root.ghostStartRect.y) < 4
-        readonly property real inlineX: Math.round(root.ghostEndRect.x + 10)
-        readonly property bool fitsInlineRight: singleLineGhost && (inlineX + width <= root.width - 12)
-        readonly property real belowY: Math.round(
-            Math.max(root.caretRect.y + root.caretRect.height,
-                     root.ghostEndRect.y + root.ghostEndRect.height) + 4)
-        readonly property real aboveY: Math.round(
-            Math.min(root.caretRect.y, root.ghostStartRect.y) - height - 4)
-
-        x: fitsInlineRight
-            ? inlineX
-            : Math.max(8, Math.min(Math.round(root.ghostStartRect.x), Math.max(8, root.width - width - 12)))
-        y: fitsInlineRight
-            ? Math.max(4, Math.round(root.ghostEndRect.y + (root.ghostEndRect.height - height) * 0.5))
-            : ((belowY + height <= root.height - 8 || aboveY < 8)
-                ? Math.max(8, belowY)
-                : Math.max(8, aboveY))
-        height: Math.max(22, hintRow.implicitHeight + 6)
-        width: hintRow.implicitWidth + 14
+        visible: (root.noaCopilot?.transientHint ?? "") !== ""
+        width: hint.implicitWidth + 14
+        height: hint.implicitHeight + 6
+        x: Math.max(4, Math.min(root.width - width - 4, root.caretRect.x))
+        y: Math.max(4, Math.min(root.height - height - 4, root.caretRect.y + root.caretRect.height + 4))
         radius: Theme.smallControlRadius
         color: Theme.surfaceColor(Theme.colors.background.elevated)
-        border.width: 1 / root.Screen.devicePixelRatio
-        border.color: Theme.floatingBorderColor
-        opacity: 0.94
-
-        Row {
-            id: hintRow
+        Text {
+            id: hint
             anchors.centerIn: parent
-            spacing: 6
-
-            Rectangle {
-                visible: root.ghostStreaming
-                anchors.verticalCenter: parent.verticalCenter
-                width: 6
-                height: 6
-                radius: 3
-                color: Theme.colors.accent.primary
-            }
-
-            Repeater {
-                model: root.noaCopilot?.exhaustionHint ? ["诺亚想不出来更多的写法了哦"]
-                    : root.noaCopilot ? [root.noaCopilot.candidateHint, "↑ 原谱", "↓ 换一个", "→ 一拍", "Tab 采纳", "Esc 还原"] : []
-                delegate: Text {
-                    required property int index
-                    required property string modelData
-                    text: modelData
-                    font.family: Theme.uiFont
-                    font.pixelSize: Theme.captionFontSize
-                    color: index === 0 ? Theme.colors.accent.primary : Theme.colors.text.secondary
-                    MouseArea {
-                        anchors.fill: parent
-                        enabled: index > 0
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (index === 1 || index === 2) root.noaCopilot.switchCandidate(index === 1 ? -1 : 1)
-                            if (index === 3) root.noaCopilot.acceptNextGhostStep()
-                            if (index === 4) root.noaCopilot.acceptGhostAll()
-                            if (index === 5) root.noaCopilot.dismissAllActivePreviews()
-                        }
-                    }
-                }
-            }
+            text: root.noaCopilot?.transientHint ?? ""
+            color: Theme.colors.text.primary
+            font.pixelSize: Theme.captionFontSize
         }
     }
-
     Rectangle {
         visible: root.ghostVisible && root.noaCopilot.selectedCandidate > 0
         x: 1
@@ -111,7 +54,7 @@ Item {
         opacity: 0.6
     }
     Rectangle {
-        visible: !!root.noaCopilot && root.noaCopilot.enabled && root.noaCopilot.skeletonSelection && !root.ghostVisible && !root.noaCopilot.exhaustionHint
+        visible: !!root.noaCopilot && root.noaCopilot.enabled && root.noaCopilot.skeletonSelection && !root.ghostVisible && !root.noaCopilot.transientHint
         x: Math.max(4, Math.min(root.width-width-4,root.caretRect.x))
         y: Math.max(4, Math.min(root.height-height-4,root.caretRect.y+root.caretRect.height))
         width: fillHint.implicitWidth+16

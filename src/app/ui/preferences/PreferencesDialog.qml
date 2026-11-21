@@ -1026,13 +1026,6 @@ AppDialog {
                             onToggled: if (root.noaCopilot) root.noaCopilot.enabled = checked
                         }
 
-                        PreferenceSwitch {
-                            text: "光标停顿自动触发 Ghost Note 续写"
-                            enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                            checked: root.noaCopilot ? root.noaCopilot.autoContinueEnabled : false
-                            onToggled: if (root.noaCopilot) root.noaCopilot.autoContinueEnabled = checked
-                        }
-
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.minimumHeight: root.settingsRowHeight
@@ -1241,11 +1234,11 @@ AppDialog {
                             }
 
                             PreferenceGroup {
-                                title: "采样超参数与触发灵敏度"
+                                title: "采样与预计算"
 
                                 Repeater {
                                     model: [{key:"lineAlignBeats",title:"每行对齐拍数",max:32},
-                                            {key:"candidateCount",title:"续写候选数",max:8},
+                                            {key:"candidateCount",title:"预计算序列数量",max:8},
                                             {key:"cpuThreads",title:"CPU 推理线程",max:64}]
                                     delegate: PreferenceSlider {
                                         required property var modelData
@@ -1256,17 +1249,6 @@ AppDialog {
                                 }
                                 AppCheckBox { text: "保存 MERT 特征"; checked: root.noaCopilot?.mertCache ?? true; onClicked: root.noaCopilot.mertCache = checked }
                                 AppCheckBox { text: "保存 RoFormer 和 Drafter 特征"; checked: root.noaCopilot?.roformerCache ?? true; onClicked: root.noaCopilot.roformerCache = checked }
-                                PreferenceSlider {
-                                    label: "停顿触发延迟"
-                                    from: 200
-                                    to: 1500
-                                    stepSize: 50
-                                    decimals: 0
-                                    suffix: " ms"
-                                    value: root.noaCopilot ? root.noaCopilot.debounceMs : 420
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.debounceMs = Math.round(v) }
-                                }
-
                                 PreferenceSlider {
                                     label: "Slide 偏置"
                                     suffix: ""

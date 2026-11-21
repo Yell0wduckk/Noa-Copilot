@@ -287,6 +287,12 @@ DocumentModel::~DocumentModel()
     }
 }
 
+miacode::simai::SimaiTimingMetadata DocumentModel::timingMetadata() const
+{
+    return workspace_ ? miacode::simai::buildTimingMetadata(workspace_->document())
+                      : miacode::simai::SimaiTimingMetadata{};
+}
+
 QString DocumentModel::chartText() const
 {
     if (workspace_ == nullptr) return {};

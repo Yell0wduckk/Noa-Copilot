@@ -96,6 +96,7 @@ public:
     ~DocumentModel() override;
 
     QString chartText() const;
+    miacode::simai::SimaiTimingMetadata timingMetadata() const;
     void setChartText(const QString& value);
     bool applyGeneratedChart(const QString& text, bool persist = true);
     void setEditorBookmarks(int difficultyId, const QVariantList& bookmarks);

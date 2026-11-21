@@ -846,6 +846,7 @@ bool noteLocationInGhostStrikeRange(
 
 QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveNormalNoteMarkers() const
 {
+    if (auditionMarkers_) return auditionMarkers_->normal;
     const QVector<TimelineNoteMarker>& source = state_.timeline_.latestTimelineNoteMarkers_;
     if (!ghostStrikeActive_ || ghostStrikeEndLine_ <= 0) {
         return source;
@@ -874,6 +875,7 @@ QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveNorm
 
 QVector<TimelineNoteMarker> miacode::runtime::PlaybackCoordinator::effectiveSfxNoteMarkers() const
 {
+    if (auditionMarkers_) return auditionMarkers_->playback;
     if (sfxValid_ && filteredSource_.isSharedWith(state_.timeline_.latestTimelineNoteMarkers_)) return cachedSfx_;
     QVector<TimelineNoteMarker> combined = effectiveNormalNoteMarkers();
     if (ghostPreviewMarkers_.isEmpty()) {
@@ -935,8 +937,11 @@ void miacode::runtime::PlaybackCoordinator::setGhostPreviewOverlay(
     int strikeStartLine,
     int strikeStartCol,
     int strikeEndLine,
-    int strikeEndCol, bool streaming)
+    int strikeEndCol, bool streaming,
+    const TimelineAuditionMarkers* audition)
 {
+    if (audition) auditionMarkers_ = *audition;
+    else auditionMarkers_.reset();
     transientOverlay_ = streaming;
     sfxValid_ = false;
     if (ghostStrikeStartLine_ != strikeStartLine
@@ -994,11 +999,25 @@ QFuture<int> miacode::runtime::PlaybackCoordinator::localGhostIssues(const QVect
     });
 }
 
-void miacode::runtime::PlaybackCoordinator::clearGhostPreviewOverlay()
+void miacode::runtime::PlaybackCoordinator::clearGhostPreviewOverlay(bool accepted)
 {
-    if (ghostPreviewMarkers_.isEmpty() && !ghostStrikeActive_ && !overlaySfxPending_) {
+    if (!auditionMarkers_ && ghostPreviewMarkers_.isEmpty() && !ghostStrikeActive_ && !overlaySfxPending_) {
         return;
     }
+    if (auditionMarkers_) {
+        if (accepted) {
+            state_.timeline_.latestTimelineNoteMarkers_ = auditionMarkers_->playback;
+        } else if (hasActiveDifficulty() && (state_.timeline_.latestTimelinePreviewRevision_ != state_.timeline_.timelineRevision_
+                   || state_.timeline_.lastTimelineParseChartText_ != activeChartText()
+                   || state_.timeline_.lastTimelineParseDifficultyId_ != activeDifficultyId())) {
+            // A just-accepted beat can precede the asynchronous document parse.
+            const auto committed = buildTimelinePreviewRefreshState(
+                SimaiParser::parseForTimeline(activeChartText(), currentTimingMetadata()), parsedFirstSeconds());
+            state_.timeline_.latestTimelineNoteMarkers_ = committed.shiftedNoteMarkers;
+            state_.timeline_.latestTimelineNoteMarkerSignature_ = committed.noteMarkerSignature;
+        }
+    }
+    auditionMarkers_.reset();
     transientOverlay_ = false;
     sfxValid_ = false;
     cachedSfx_.clear();
@@ -1088,7 +1107,7 @@ void miacode::runtime::PlaybackCoordinator::dispatchTimelineSlowRefresh()
     if (!state_.playing_) {
         applyLatestTimelinePreviewStateToPausedPreview();
     }
-    if (state_.playing_ && services_.workspace().latestChangeIsGeneratedChart()
+    if (state_.playing_
         && previewState.noteMarkerSignature != state_.lastPreviewNoteMarkerSignature_) {
         const QVector<TimelineNoteMarker> normalMarkers = effectiveNormalNoteMarkers();
         const QVector<TimelineNoteMarker> sfxMarkers = effectiveSfxNoteMarkers();

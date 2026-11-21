@@ -95,3 +95,9 @@ struct TimelineNoteMarker {
     double hsMultiplier = 1.0;
     bool skeleton = false;
 };
+
+struct TimelineAuditionMarkers {
+    QVector<TimelineNoteMarker> normal;
+    QVector<TimelineNoteMarker> ghost;
+    QVector<TimelineNoteMarker> playback;
+};

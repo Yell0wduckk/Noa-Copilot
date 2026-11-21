@@ -49,10 +49,31 @@ bool testEditor(QTextStream& out, const QString& capturePath)
             const int flags = int(notification.modificationType);
             if (notification.code != Scintilla::Notification::Modified
                 || !(flags & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT))) return;
-            document.applyChange(notification.position,
-                flags & SC_MOD_DELETETEXT ? QString::fromUtf8(notification.text).size() : 0,
-                flags & SC_MOD_INSERTTEXT ? notification.text : QByteArray{});
+            document.applyChange(notification);
         });
+
+    // Ghost updates replace the same native range with undo collection disabled.
+    // A shortened or retracted candidate must disappear from the UTF-16 shadow too.
+    const QString prefix = QStringLiteral("|| 🌙\n(120){4}");
+    const QString suffix = QStringLiteral(",\n7,8,\nE");
+    QString visible = QStringLiteral("1h[4:1]/2");
+    document.activate(QStringLiteral("review"), prefix + visible + suffix);
+    editor.send(SCI_SETUNDOCOLLECTION, 0);
+    for (const QString& next : {QStringLiteral("6b"), QStringLiteral("|| 雪🌙\n3/4"), QString(), QStringLiteral("5-1[4:1]")}) {
+        editor.send(SCI_SETTARGETSTART, document.bytePosition(prefix.size()));
+        editor.send(SCI_SETTARGETEND, document.bytePosition(prefix.size() + visible.size()));
+        const auto bytes = next.toUtf8();
+        editor.sends(SCI_REPLACETARGET, bytes.size(), bytes.constData());
+        visible = next;
+        const int length = editor.send(SCI_GETLENGTH);
+        QByteArray native(length + 1, Qt::Uninitialized);
+        editor.send(SCI_GETTEXT, native.size(), reinterpret_cast<sptr_t>(native.data()));
+        if (document.text() != prefix + visible + suffix || document.text() != QString::fromUtf8(native.constData(), length)) {
+            out << "retracted ghost survived a native replacement\n";
+            return false;
+        }
+    }
+    editor.send(SCI_SETUNDOCOLLECTION, 1);
 
     const QFont font(QStringLiteral("Consolas"), 11);
     editor.setProperty("font", font);

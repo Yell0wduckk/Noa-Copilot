@@ -61,7 +61,7 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: "当前难度内容为空。可基于音频、BPM 与难度定数直接流式生成整曲初稿，或直接开始输入音符触发自动续写。"
+                text: "当前难度内容为空。可基于音频、BPM 与难度定数直接流式生成整曲初稿，或输入音符后按 Tab 续写。"
                 font.family: Theme.uiFont
                 font.pixelSize: Theme.secondaryFontSize
                 color: Theme.colors.text.secondary

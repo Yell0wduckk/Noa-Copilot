@@ -37,8 +37,6 @@ class NoaCopilotModel final : public QObject
 
     // ---- Core Enable & Status ----
     Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY configChanged)
-    Q_PROPERTY(bool autoContinue READ autoContinue WRITE setAutoContinue NOTIFY configChanged)
-    Q_PROPERTY(bool autoContinueEnabled READ autoContinue WRITE setAutoContinue NOTIFY configChanged)
     Q_PROPERTY(QString statusState READ statusState NOTIFY statusChanged)
     Q_PROPERTY(QString daemonState READ statusState NOTIFY statusChanged)
     Q_PROPERTY(QString statusLabel READ statusLabel NOTIFY statusChanged)
@@ -75,10 +73,10 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QString mertDevice READ mertDevice WRITE setMertDevice NOTIFY configChanged)
     Q_PROPERTY(QString cpuPython READ cpuPython WRITE setCpuPython NOTIFY configChanged)
     Q_PROPERTY(QString cudaPython READ cudaPython WRITE setCudaPython NOTIFY configChanged)
-    Q_PROPERTY(bool exhaustionHint READ exhaustionHint NOTIFY ghostStateChanged)
     Q_PROPERTY(int selectedCandidate READ selectedCandidate NOTIFY ghostStateChanged)
     Q_PROPERTY(bool skeletonSelection READ skeletonSelection NOTIFY ghostStateChanged)
-    Q_PROPERTY(QString candidateHint READ candidateHint NOTIFY ghostStateChanged)
+    Q_PROPERTY(int candidateLocalIssues READ candidateLocalIssues NOTIFY ghostStateChanged)
+    Q_PROPERTY(QString transientHint READ transientHint NOTIFY ghostStateChanged)
     Q_PROPERTY(QString environmentStatus READ environmentStatus NOTIFY configChanged)
     Q_PROPERTY(bool cpuMertAvailable READ cpuMertAvailable NOTIFY configChanged)
     Q_PROPERTY(bool cudaMertAvailable READ cudaMertAvailable NOTIFY configChanged)
@@ -88,7 +86,6 @@ class NoaCopilotModel final : public QObject
     // ---- Advanced Sampling & Runtime Controls ----
     Q_PROPERTY(double slideBias READ slideBias WRITE setSlideBias NOTIFY configChanged)
     Q_PROPERTY(int seed READ seed WRITE setSeed NOTIFY configChanged)
-    Q_PROPERTY(int debounceMs READ debounceMs WRITE setDebounceMs NOTIFY configChanged)
 
     Q_PROPERTY(QString pythonMode READ pythonMode WRITE setPythonMode NOTIFY configChanged)
     Q_PROPERTY(QString envMode READ pythonMode WRITE setPythonMode NOTIFY configChanged)
@@ -154,8 +151,6 @@ public:
     bool enabled() const { return enabled_; }
     void setEnabled(bool value);
 
-    bool autoContinue() const { return autoContinue_; }
-    void setAutoContinue(bool value);
 
     QString statusState() const { return statusState_; }
     QString statusLabel() const { return statusLabel_; }
@@ -197,8 +192,6 @@ public:
     int seed() const { return seed_; }
     void setSeed(int value);
 
-    int debounceMs() const { return debounceMs_; }
-    void setDebounceMs(int value);
 
     QString pythonMode() const { return pythonMode_; }
     void setPythonMode(const QString& mode);
@@ -272,10 +265,14 @@ public:
     void setCpuPython(QString value);
     QString cudaPython() const { return cudaPython_; }
     void setCudaPython(QString value);
-    bool exhaustionHint() const { return exhaustionTimer_.isActive(); }
     int selectedCandidate() const { return selected_; }
     bool skeletonSelection() const { return skeletonSelection_; }
-    QString candidateHint() const;
+    int candidateLocalIssues() const {
+        const auto it = candidates_.constFind(selected_);
+        return it == candidates_.cend() ? 0 : it->localIssues;
+    }
+    QString transientHint() const { return exhaustionTimer_.isActive() ? hintText_ : QString(); }
+    Q_INVOKABLE bool seekCandidateAt(int visualPosition);
     QString environmentStatus() const { return environmentStatus_; }
     bool cpuMertAvailable() const { return cpuMertAvailable_; }
     bool cudaMertAvailable() const { return cudaMertAvailable_; }
@@ -288,14 +285,6 @@ public:
     // ---- Editor & UI Invokables ----
     Q_INVOKABLE void bindEditor(QObject* editorObject);
     Q_INVOKABLE void notifyEditorCursorOrTextChanged(int cursorPos, int selStart, int selEnd, bool textChanged);
-    Q_INVOKABLE void notifyEditorCursorOrTextChanged(
-        int cursorPos,
-        int selStart,
-        int selEnd,
-        const QString& text,
-        bool imeComposing = false,
-        bool completionActive = false,
-        bool followPlaybackActive = false);
     Q_INVOKABLE bool handleEditorKeyPress(int key, int modifiers);
 
     Q_INVOKABLE void triggerManualContinue();
@@ -416,8 +405,8 @@ private:
     QString cudaPython_ = {};
     struct Candidate {
         NoaMaterializer writer;
-        QVector<TimelineNoteMarker> markers;
-        TimelineRenderSnapshot timeline;
+        TimelineAuditionMarkers audition;
+        TimelineRenderSnapshot timeline, normalTimeline;
         QString previewKey;
         bool ready = false, previewReady = false;
         int localIssues = 0;
@@ -427,7 +416,7 @@ private:
         double startSecond = 0, activeBpm = 120;
     };
     QMap<int,Candidate> candidates_;
-    int selected_ = 0, wanted_ = 0, highCandidate_ = 0, scanGeneration_ = 0;
+    int selected_ = 0, highCandidate_ = 0, scanGeneration_ = 0;
     bool exhausted_ = false, acceptingStep_ = false, skeletonSelection_ = false;
     bool cpuAvailable_ = false, cudaAvailable_ = false;
     bool cpuMertAvailable_ = false, cudaMertAvailable_ = false;
@@ -441,12 +430,15 @@ private:
     bool orderedSteps_ = false, needsChartSync_ = true;
     QJsonObject lastWarmSignature_;
     void selectBackendCandidate();
-    void notifyExhausted();
+    QString hintText_;
+    int prefetchThrough_ = 0;
+    void notifyHint(const QString& message);
     std::shared_ptr<SimaiLineCache> ghostLineCache_;
     std::unique_ptr<TimelineQuickModel> ghostTimelineModel_;
     void compileGhost(const QString& text, double start, double bpm, QVector<TimelineNoteMarker>& markers,
                       TimelineRenderSnapshot& timeline);
-    void prepareCandidatePreview(Candidate& candidate, const QString& simai);
+    void prepareCandidatePreview(Candidate& candidate);
+    void beginCandidate(int number, const QJsonObject& layout);
     void showCandidate();
     bool handleStructured(const QJsonObject& message);
     void discardCandidates();
@@ -456,14 +448,12 @@ private:
     bool hasSkeleton(bool selectionOnly) const;
     // ---- Preferences ----
     bool enabled_ = true;
-    bool autoContinue_ = true;
     QString defaultDesigner_;
     QString device_ = QStringLiteral("auto");
     QString precision_ = QStringLiteral("bf16");
     double temperature_ = 0.5;
     double slideBias_ = 0.0;
     int seed_ = -1;
-    int debounceMs_ = 420;
     QString checkpointPath_;
     QString checkpointDir_;
     QString pythonMode_ = QStringLiteral("bundled");
@@ -497,7 +487,6 @@ private:
     quint64 syncedChartRevision_ = 0;
     QString lastObservedEditorText_;
 
-    QTimer debounceTimer_;
     QTimer idleVramTimer_;
     int lastCursorPos_ = 0;
     int lastSelStart_ = 0;

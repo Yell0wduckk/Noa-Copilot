@@ -101,10 +101,11 @@ public:
         int strikeStartLine,
         int strikeStartCol,
         int strikeEndLine,
-        int strikeEndCol, bool streaming = false);
+        int strikeEndCol, bool streaming = false,
+        const TimelineAuditionMarkers* audition = nullptr);
     QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end);
     void setCopilotReview(bool active);
-    void clearGhostPreviewOverlay();
+    void clearGhostPreviewOverlay(bool accepted = false);
 
 signals:
     void positionChanged();

@@ -28,6 +28,15 @@ namespace {
 
 constexpr int kPreviewIntervalWindowSize = 120;
 
+QVector<TimelineNoteMarker> circleNotes(const QVector<TimelineNoteMarker>& notes)
+{
+    auto visible = notes;
+    const auto isSkeleton = [](const TimelineNoteMarker& note) { return note.skeleton; };
+    if (std::any_of(notes.cbegin(), notes.cend(), isSkeleton))
+        visible.removeIf(isSkeleton);
+    return visible;
+}
+
 double averageOrZero(double total, qint64 count)
 {
     return count > 0 ? total / static_cast<double>(count) : 0.0;
@@ -623,9 +632,7 @@ void PreviewRuntime::setNoteMarkers(const QVector<TimelineNoteMarker>& notes)
 {
     if (sourceNoteMarkers_.isSharedWith(notes) && !fireworkWarmupArmed_) return;
     sourceNoteMarkers_ = notes;
-    frameState_.noteMarkers = notes;
-    if (std::any_of(notes.cbegin(),notes.cend(),[](const auto& n){return n.skeleton;}))
-        frameState_.noteMarkers.removeIf([](const auto& n){return n.skeleton;});
+    frameState_.noteMarkers = circleNotes(notes);
     // Keep the firework warm-up marker alive across marker refreshes until
     // it has actually been presented — otherwise a marker push that lands
     // between arming and the warm-up render would drop it (and updates
@@ -642,7 +649,7 @@ void PreviewRuntime::setGhostNoteMarkers(const QVector<TimelineNoteMarker>& note
     if (frameState_.ghostNoteMarkers.isEmpty() && notes.isEmpty()) {
         return;
     }
-    frameState_.ghostNoteMarkers = notes;
+    frameState_.ghostNoteMarkers = circleNotes(notes);
     frameState_.ghostSceneContentRevision += 1;
     update();
 }

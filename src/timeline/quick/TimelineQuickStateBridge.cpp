@@ -170,6 +170,8 @@ void TimelineQuickStateBridge::bumpOverlayDynamicRevision()
 
 void TimelineQuickStateBridge::clear()
 {
+    hasCandidate_ = false;
+    candidateNormal_ = {};
     snapshot_ = TimelineRenderSnapshot();
     clearGhostRangeCache();
     ghostSnapshot_ = TimelineRenderSnapshot();
@@ -253,7 +255,41 @@ void TimelineQuickStateBridge::replaceTimelineData(
 
 const TimelineRenderSnapshot& TimelineQuickStateBridge::renderSnapshot() const
 {
+    if (hasCandidate_) return candidateNormal_;
     return ghostStrikeActive_ ? filteredSnapshot_ : snapshot_;
+}
+
+void TimelineQuickStateBridge::setCandidateSnapshots(const TimelineRenderSnapshot& normal, const TimelineRenderSnapshot& ghost)
+{
+    candidateNormal_ = normal;
+    ghostSnapshot_ = ghost;
+    hasCandidate_ = true;
+    bumpNotesRevision();
+    ++ghostNotesRevision_;
+    emit renderStateChanged();
+}
+
+void TimelineQuickStateBridge::clearCandidateSnapshots(bool accepted)
+{
+    if (!hasCandidate_) return;
+    if (accepted) {
+        snapshot_ = candidateNormal_;
+        for (qsizetype i = 0; i < ghostSnapshot_.lines.size(); ++i) {
+            const auto& added = ghostSnapshot_.lines.at(i).notes;
+            if (added.isEmpty()) continue;
+            auto& notes = snapshot_.lines[i].notes;
+            notes += added;
+            std::stable_sort(notes.begin(), notes.end(), [](const auto& a, const auto& b) {
+                return a.secondOffset < b.secondOffset || (a.secondOffset == b.secondOffset && a.sourceCol < b.sourceCol);
+            });
+        }
+    }
+    hasCandidate_ = false;
+    candidateNormal_ = {};
+    ghostSnapshot_ = {};
+    bumpNotesRevision();
+    ++ghostNotesRevision_;
+    emit renderStateChanged();
 }
 
 void TimelineQuickStateBridge::setGhostSnapshot(const TimelineRenderSnapshot& snapshot)

@@ -420,7 +420,8 @@ void PreviewModel::setGhostPreviewOverlay(
     int strikeStartLine,
     int strikeStartCol,
     int strikeEndLine,
-    int strikeEndCol, bool streaming)
+    int strikeEndCol, bool streaming,
+    const TimelineAuditionMarkers* audition)
 {
     if (surface() != nullptr) {
         surface()->setGhostPreviewOverlay(
@@ -429,7 +430,7 @@ void PreviewModel::setGhostPreviewOverlay(
             strikeStartLine,
             strikeStartCol,
             strikeEndLine,
-            strikeEndCol, streaming);
+            strikeEndCol, streaming, audition);
     }
 }
 
@@ -443,10 +444,10 @@ void PreviewModel::setCopilotReview(bool active)
     if (surface()) surface()->setCopilotReview(active);
 }
 
-void PreviewModel::clearGhostPreviewOverlay()
+void PreviewModel::clearGhostPreviewOverlay(bool accepted)
 {
     if (surface() != nullptr) {
-        surface()->clearGhostPreviewOverlay();
+        surface()->clearGhostPreviewOverlay(accepted);
     }
 }
 
