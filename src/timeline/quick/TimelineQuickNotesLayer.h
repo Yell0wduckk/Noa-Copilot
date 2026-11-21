@@ -9,7 +9,7 @@ class TimelineQuickTextureCache;
 class TimelineQuickNotesLayer
 {
 public:
-    explicit TimelineQuickNotesLayer(bool grayscale = false) : grayscale_(grayscale) {}
+    explicit TimelineQuickNotesLayer(bool candidate = false) : candidate_(candidate) {}
     QSGNode* updateNode(
         QSGNode* oldNode,
         const miacode::timeline::TimelineSceneState& state,
@@ -17,5 +17,5 @@ public:
         TimelineQuickTextureCache* textures) const;
 
 private:
-    bool grayscale_;
+    bool candidate_;
 };

@@ -9,7 +9,6 @@
 #include <QSGGeometry>
 #include <QSGGeometryNode>
 #include <QSGNode>
-#include <QSGOpacityNode>
 #include <QSGRendererInterface>
 #include <QStringList>
 #include <QMetaObject>
@@ -1551,29 +1550,7 @@ QSGNode* TimelineQuickItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeDat
             miacode::timeline::TimelineSceneStateBuilder::build(ghostReq);
         ghostState.horizontalScrollValue = state.horizontalScrollValue;
 
-        auto* opacityNode = dynamic_cast<QSGOpacityNode*>(oldChild);
-        if (opacityNode == nullptr) {
-            delete oldChild;
-            opacityNode = new QSGOpacityNode();
-            opacityNode->setOpacity(0.45);
-        } else {
-            opacityNode->setOpacity(0.45);
-        }
-        QSGNode* innerOld = opacityNode->firstChild();
-        QSGNode* innerNew = ghostNotesLayer_->updateNode(innerOld, ghostState, window(), textures_.get());
-        QSGNode* child = opacityNode->firstChild();
-        while (child != nullptr) {
-            QSGNode* next = child->nextSibling();
-            if (child != innerNew) {
-                opacityNode->removeChildNode(child);
-                delete child;
-            }
-            child = next;
-        }
-        if (innerNew != nullptr && innerNew->parent() != opacityNode) {
-            opacityNode->appendChildNode(innerNew);
-        }
-        return opacityNode;
+        return ghostNotesLayer_->updateNode(oldChild, ghostState, window(), textures_.get());
     });
     updateLayerSlot(layerSlotAt(root, slotIndex++), [&](QSGNode* oldChild) {
         return overlayLayer_->updateNode(oldChild, state, window(), textures_.get());
