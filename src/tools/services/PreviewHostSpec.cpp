@@ -64,7 +64,37 @@ public:
     void applyAudioSettings(const PreviewAudioSettings&) override { ++applyAudioSettingsCount; }
     void saveAudioSettingsAsSoftwareDefault() override { ++saveAudioSettingsCount; }
     void restoreAudioSettingsFromSoftwareDefault() override { ++restoreAudioSettingsCount; }
+    void setCopilotReview(bool active) override { reviewing = active; }
+    void setGhostPreviewOverlay(const QVector<TimelineNoteMarker>& notes, bool strike,
+                                int firstLine, int firstColumn, int lastLine, int lastColumn,
+                                bool streaming, const TimelineAuditionMarkers* audition) override
+    {
+        ghostNotes = notes;
+        strikeRange = strike ? QList<int>{firstLine, firstColumn, lastLine, lastColumn} : QList<int>{};
+        receivingStream = streaming;
+        receivedAudition = audition;
+    }
+    QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>& notes, double start, double end) override
+    {
+        int count = 0;
+        for (const auto& note : notes) {
+            if (start <= note.second && note.second < end) ++count;
+        }
+        return QtFuture::makeReadyValueFuture(count);
+    }
+    void clearGhostPreviewOverlay(bool accepted) override
+    {
+        clearDecisions.append(accepted);
+        ghostNotes.clear();
+        receivedAudition = nullptr;
+    }
 
+    bool reviewing = false;
+    bool receivingStream = false;
+    QList<int> strikeRange;
+    QVector<TimelineNoteMarker> ghostNotes;
+    const TimelineAuditionMarkers* receivedAudition = nullptr;
+    QList<bool> clearDecisions;
     bool playingValue = false;
     miacode::PlaybackTransportState transportState =
         miacode::PlaybackTransportState::Paused;
@@ -179,6 +209,44 @@ bool verifyPreviewProjectionAndInvalidation(QTextStream& err)
     return ok;
 }
 
+bool verifyCopilotAudition(QTextStream& err)
+{
+    FakePreviewSurface playback;
+    FakePreviewPlaybackPort port;
+    miacode::runtime::PreviewHost host(playback, port, port);
+    miacode::PreviewSurface& surface = host;
+    TimelineNoteMarker note;
+    note.second = 2;
+    note.lane = 1;
+    TimelineAuditionMarkers first;
+    first.ghost.append(note);
+    first.playback = first.ghost;
+    surface.setCopilotReview(true);
+    surface.setGhostPreviewOverlay(first.ghost, true, 3, 4, 5, 6, true, &first);
+    bool ok = require(playback.reviewing && playback.receivingStream && playback.receivedAudition == &first
+                          && playback.ghostNotes.isSharedWith(first.ghost)
+                          && playback.strikeRange == QList<int>{3, 4, 5, 6},
+                      QStringLiteral("streaming candidate reaches the workbench preview surface"), err);
+
+    TimelineAuditionMarkers second;
+    note.lane = 6;
+    second.ghost.append(note);
+    second.playback = second.ghost;
+    surface.setGhostPreviewOverlay(second.ghost, false, 0, 0, 0, 0, false, &second);
+    ok &= require(!playback.receivingStream && playback.strikeRange.isEmpty()
+                      && playback.ghostNotes.isSharedWith(second.ghost) && playback.receivedAudition == &second
+                      && surface.localGhostIssues(second.ghost, 1.5, 2.5).result() == 1,
+                  QStringLiteral("switching candidates replaces both visual and audible markers"), err);
+    surface.clearGhostPreviewOverlay(false);
+    surface.setGhostPreviewOverlay(second.ghost, false, 0, 0, 0, 0, false, &second);
+    surface.clearGhostPreviewOverlay(true);
+    surface.setCopilotReview(false);
+    ok &= require(!playback.reviewing && playback.ghostNotes.isEmpty() && !playback.receivedAudition
+                      && playback.clearDecisions == QList<bool>{false, true},
+                  QStringLiteral("discard and accept reach playback with the correct decision"), err);
+    return ok;
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -188,6 +256,7 @@ int main(int argc, char** argv)
     bool ok = true;
     ok &= verifyPreviewUsesPlaybackPort(err);
     ok &= verifyPreviewProjectionAndInvalidation(err);
+    ok &= verifyCopilotAudition(err);
     if (ok) {
         QTextStream(stdout) << "preview_host_spec: OK" << Qt::endl;
     }

@@ -257,4 +257,34 @@ void PreviewHost::restoreAudioSettingsFromSoftwareDefault()
     }
 }
 
+void PreviewHost::setGhostPreviewOverlay(const QVector<TimelineNoteMarker>& ghostMarkers, bool strikeActive,
+                                        int strikeStartLine, int strikeStartCol, int strikeEndLine, int strikeEndCol,
+                                        bool streaming, const TimelineAuditionMarkers* audition)
+{
+    if (legacySurface_ != nullptr) {
+        legacySurface_->setGhostPreviewOverlay(ghostMarkers, strikeActive, strikeStartLine, strikeStartCol,
+                                              strikeEndLine, strikeEndCol, streaming, audition);
+    }
+}
+
+QFuture<int> PreviewHost::localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end)
+{
+    return legacySurface_ != nullptr ? legacySurface_->localGhostIssues(markers, start, end)
+                                     : QtFuture::makeReadyValueFuture(0);
+}
+
+void PreviewHost::setCopilotReview(bool active)
+{
+    if (legacySurface_ != nullptr) {
+        legacySurface_->setCopilotReview(active);
+    }
+}
+
+void PreviewHost::clearGhostPreviewOverlay(bool accepted)
+{
+    if (legacySurface_ != nullptr) {
+        legacySurface_->clearGhostPreviewOverlay(accepted);
+    }
+}
+
 }  // namespace miacode::runtime

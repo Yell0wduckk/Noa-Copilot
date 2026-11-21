@@ -61,6 +61,12 @@ public:
     void applyAudioSettings(const PreviewAudioSettings& settings) override;
     void saveAudioSettingsAsSoftwareDefault() override;
     void restoreAudioSettingsFromSoftwareDefault() override;
+    void setGhostPreviewOverlay(const QVector<TimelineNoteMarker>& ghostMarkers, bool strikeActive,
+                                int strikeStartLine, int strikeStartCol, int strikeEndLine, int strikeEndCol,
+                                bool streaming, const TimelineAuditionMarkers* audition) override;
+    QFuture<int> localGhostIssues(const QVector<TimelineNoteMarker>& markers, double start, double end) override;
+    void setCopilotReview(bool active) override;
+    void clearGhostPreviewOverlay(bool accepted) override;
 
 private:
     miacode::PreviewSurface* legacySurface_ = nullptr;
