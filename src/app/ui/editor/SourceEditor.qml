@@ -698,6 +698,15 @@ Rectangle {
         function onEditorClosed(key) { sourceArea.dropDocument(key) }
     }
     Connections {
+        target: root.noaCopilot
+        function onReturnedToOriginal() {
+            const editorWindow = root.Window.window
+            if (editorWindow && !editorWindow.active && Qt.application.state === Qt.ApplicationActive)
+                editorWindow.requestActivate()
+            root.focusEditor()
+        }
+    }
+    Connections {
         target: sourceArea
         function onLayoutChanged() { root.updateMenuPlacement() }
         function onScenePositionChanged() { root.updateMenuPlacement() }

@@ -1446,16 +1446,22 @@ void NoaCopilotModel::beginCandidate(int number, const QJsonObject& layout)
 
 void NoaCopilotModel::switchCandidate(int direction)
 {
-    if (candidates_.isEmpty()) return;
-    if (direction > 0 && selected_ && !candidates_.constFind(selected_)->ready) {
-        notifyHint(QStringLiteral("诺亚还没写完哦，请稍等"));
-        return;
-    }
+    if (!candidateSessionActive()) return;
     int next = selected_ + direction;
     if (direction < 0) {
-        if (next < 0) return;
         while (next > 0 && !candidates_.contains(next)) --next;
+        if (next <= 0) {
+            dismissAllActivePreviews();
+            emit returnedToOriginal();
+            return;
+        }
     } else {
+        const auto current = candidates_.constFind(selected_);
+        if (current == candidates_.cend() || !current->ready) {
+            if (current != candidates_.cend() || !ghostActive_)
+                notifyHint(QStringLiteral("诺亚还没写完哦，请稍等"));
+            return;
+        }
         while (next <= highCandidate_ && !candidates_.contains(next)) ++next;
         if (exhausted_ && next > highCandidate_) {
             notifyHint(QStringLiteral("诺亚想不出来更多的写法了哦"));
@@ -1463,18 +1469,17 @@ void NoaCopilotModel::switchCandidate(int direction)
         }
         prefetchThrough_ = qMax(prefetchThrough_, next + candidateCount_ - 1);
         if (!candidates_.contains(next)) {
-            const auto& current = candidates_.constFind(selected_ ? selected_ : 1).value();
-            QJsonObject layout = current.writer.layout();
-            if (current.stepsTaken) {
+            QJsonObject layout = current->writer.layout();
+            if (current->stepsTaken) {
                 layout["start"] = request_["step_tick"];
                 layout["division"] = request_["division"];
                 layout["lead"] = "";
                 // The retained writer's slot coordinates precede the committed beat.
                 // Hold this provisional range silent until its new descriptor arrives.
                 layout["skeleton"] = false;
-                layout["left"] = current.left;
-                layout["right"] = current.right;
-                layout["start_second"] = current.startSecond;
+                layout["left"] = current->left;
+                layout["right"] = current->right;
+                layout["start_second"] = current->startSecond;
             }
             beginCandidate(next, layout);
         }
@@ -1561,18 +1566,9 @@ bool NoaCopilotModel::seekCandidateAt(int visualPosition)
 
 void NoaCopilotModel::showCandidate()
 {
-    if (candidates_.isEmpty()) return;
-    if (!selected_) {
-        ghostActive_ = true;
-        ghostStreaming_ = false;
-        ghostText_.clear();
-        ghostReplaceStart_ = ghostReplaceEnd_ = lastCursorPos_;
-        emit ghostStateChanged();
-        updateEditorGhostStrike();
-        clearDualSurfaceGhostPreview();
-        return;
-    }
-    auto& c = candidates_[selected_];
+    const auto it = candidates_.find(selected_);
+    if (it == candidates_.end()) return;
+    auto& c = it.value();
     const auto& w = c.writer;
     if (fullStreamingActive_) {
         publishFullChart(w.text());
@@ -2132,13 +2128,11 @@ bool NoaCopilotModel::handleCandidateKey(int key)
 {
     if (!candidateSessionActive()) return false;
     if (key == Qt::Key_Up || key == Qt::Key_Down) {
-        if (!candidates_.isEmpty()) switchCandidate(key == Qt::Key_Up ? -1 : 1);
-        else if (key == Qt::Key_Down && !ghostActive_) notifyHint(QStringLiteral("诺亚还没写完哦，请稍等"));
+        switchCandidate(key == Qt::Key_Up ? -1 : 1);
         return true;
     }
     if (key != Qt::Key_Tab) return false;
-    if (!candidates_.isEmpty() && !selected_) dismissGhost();
-    else if (!ghostActive_ || ghostStreaming_) pendingAcceptAfterStream_ = true;
+    if (!ghostActive_ || ghostStreaming_) pendingAcceptAfterStream_ = true;
     else acceptFullGhost();
     return true;
 }
@@ -2204,7 +2198,6 @@ void NoaCopilotModel::triggerManualContinue()
 
 bool NoaCopilotModel::acceptFullGhost()
 {
-    if (!candidates_.isEmpty() && !selected_) { dismissGhost(); return true; }
     if (ghostStreaming_) { pendingAcceptAfterStream_ = true; return true; }
     if (!ghostActive_) return false;
     if (ghostText_.isEmpty() && ghostReplaceStart_ == ghostReplaceEnd_) { dismissGhost(); return true; }
@@ -2404,6 +2397,10 @@ void NoaCopilotModel::cancelActiveGeneration()
     req.insert(QStringLiteral("op"), QStringLiteral("cancel"));
     req.insert(QStringLiteral("id"), activeRequestId_);
     writeDaemonJson(req);
+    if (orderedSteps_ && candidates_.isEmpty() && activeRequestMode_ == QStringLiteral("continue")) {
+        // The worker can already own an anchor before its first candidate reaches the editor.
+        writeDaemonJson({{"op", "discard"}, {"id", nextRpcId_++}});
+    }
     activeRequestId_ = 0;
     pendingAcceptAfterStream_ = false;
     if (ghostStreaming_) {

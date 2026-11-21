@@ -297,6 +297,7 @@ signals:
     void designerOptionsChanged();
     void cacheInfoChanged();
     void ghostStateChanged();
+    void returnedToOriginal();
     void emptyCardChanged();
     void streamingProgressChanged();
 
