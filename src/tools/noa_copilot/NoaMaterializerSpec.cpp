@@ -141,16 +141,17 @@ int main(int argc,char** argv)
         || noaWarmTimingText(QStringLiteral("(150)1,,(180)x,")) == noaWarmTimingText(QStringLiteral("(150)1,(180)x,"))
         || !noaWarmTimingText(QStringLiteral("1,2,|| (100)\nE")).isEmpty()) return 1;
     if (!auditionSequence()) { qWarning()<<"audition sound-table mismatch"; return 1; }
-    QImage skin(3, 1, QImage::Format_ARGB32);
+    QImage skin(4, 1, QImage::Format_ARGB32);
     skin.setPixel(0, 0, qRgba(255, 255, 255, 255));
     skin.setPixel(1, 0, qRgba(12, 12, 12, 128));
     skin.setPixel(2, 0, qRgba(240, 48, 144, 211));
+    skin.setPixel(3, 0, qRgba(0, 240, 255, 255));
     const QImage candidate = miacode::timeline::candidateNoteImage(skin);
     const QColor tint = candidate.pixelColor(2, 0);
     if (candidate.pixel(0, 0) != skin.pixel(0, 0) || candidate.pixel(1, 0) != skin.pixel(1, 0)
         || tint != miacode::timeline::candidateNoteColor(skin.pixelColor(2, 0))
-        || tint.alpha() != 211 || tint.red() - tint.green() != 64
-        || qAbs(qGray(tint.rgb()) - qGray(skin.pixel(2, 0))) > 1) return 1;
+        || tint != QColor(240, 144, 192, 211)
+        || candidate.pixelColor(3, 0) != QColor(128, 248, 255)) return 1;
     const QString start="(120){4}1h[1:1],x,*,4,\n";
     const QString suffix="{8}2-5[4:1],3,4,5,\n(180){4}6,x**,8,\nE";
     std::shared_ptr<SimaiLineCache> cache;

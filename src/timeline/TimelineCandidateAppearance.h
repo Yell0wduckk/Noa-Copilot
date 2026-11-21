@@ -7,8 +7,10 @@ namespace miacode::timeline {
 // Keep the skin's highlights, shadows and alpha over the waveform.
 inline QRgb candidateNotePixel(QRgb pixel)
 {
-    const int gray = qGray(pixel);
-    const auto tint = [gray](int channel) { return (2 * gray + channel + 1) / 3; };
+    // Halve HSV saturation at the original value. Cyan slide arrows keep their
+    // bright edges even where the waveform has a similar luminance.
+    const int value = qMax(qRed(pixel), qMax(qGreen(pixel), qBlue(pixel)));
+    const auto tint = [value](int channel) { return (value + channel + 1) / 2; };
     return qRgba(tint(qRed(pixel)), tint(qGreen(pixel)), tint(qBlue(pixel)), qAlpha(pixel));
 }
 
