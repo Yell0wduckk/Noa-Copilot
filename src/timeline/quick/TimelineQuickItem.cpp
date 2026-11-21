@@ -9,6 +9,7 @@
 #include <QSGGeometry>
 #include <QSGGeometryNode>
 #include <QSGNode>
+#include <QSGOpacityNode>
 #include <QSGRendererInterface>
 #include <QStringList>
 #include <QMetaObject>
@@ -52,6 +53,7 @@ namespace {
 
 constexpr double kTimelineKeyHoldAccelerationPerSecond = 1.0;
 constexpr int kTimelineKeyHoldTickIntervalMs = 16;
+constexpr qreal kTimelineCandidateNoteOpacity = 0.60;
 constexpr int kTimelineLayerSlotCount = 7;  // grid + header + gridLines + wave(translucent,on-top) + notes + ghostNotes + overlay
 
 // Phase 7 scroll-bucket index. Sole definition on purpose: the bucket is computed in two
@@ -825,7 +827,6 @@ TimelineQuickItem::TimelineQuickItem(QQuickItem* parent)
     , headerLayer_(std::make_unique<TimelineQuickHeaderLayer>())
     , gridLinesLayer_(std::make_unique<TimelineQuickGridLinesLayer>())
     , notesLayer_(std::make_unique<TimelineQuickNotesLayer>())
-    , ghostNotesLayer_(std::make_unique<TimelineQuickNotesLayer>(true))
     , overlayLayer_(std::make_unique<TimelineQuickOverlayLayer>())
 {
     setFlag(ItemHasContents, true);
@@ -1550,7 +1551,15 @@ QSGNode* TimelineQuickItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeDat
             miacode::timeline::TimelineSceneStateBuilder::build(ghostReq);
         ghostState.horizontalScrollValue = state.horizontalScrollValue;
 
-        return ghostNotesLayer_->updateNode(oldChild, ghostState, window(), textures_.get());
+        auto* opacity = static_cast<QSGOpacityNode*>(oldChild);
+        if (opacity == nullptr) {
+            opacity = new QSGOpacityNode();
+            opacity->setOpacity(kTimelineCandidateNoteOpacity);
+        }
+        updateLayerSlot(opacity, [&](QSGNode* oldNotes) {
+            return notesLayer_->updateNode(oldNotes, ghostState, window(), textures_.get());
+        });
+        return opacity;
     });
     updateLayerSlot(layerSlotAt(root, slotIndex++), [&](QSGNode* oldChild) {
         return overlayLayer_->updateNode(oldChild, state, window(), textures_.get());

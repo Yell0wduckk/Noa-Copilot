@@ -72,16 +72,16 @@ public:
     // afterwards describes an empty cache instead of the one that tripped the cap.
     TimelineQuickTextureCacheCapacity capacitySnapshot() const;
     void setSkinDirectory(const QString& skinDirectory);
-    QSGTexture* textureForKey(const QString& key, const QImage& image, bool candidate = false);
-    QSGTexture* textureForPixmapKey(const QString& key, const QPixmap& pixmap, bool candidate = false);
+    QSGTexture* textureForKey(const QString& key, const QImage& image);
+    QSGTexture* textureForPixmapKey(const QString& key, const QPixmap& pixmap);
     QSGTexture* noteTexture(
         const QString& spriteType,
         const QSize& targetSize,
         qreal rotationDegrees = 0.0,
-        bool mirrorX = false, bool candidate = false);
+        bool mirrorX = false);
     QSize noteTargetSize(const QString& spriteType, qreal scale) const;
     qreal holdScaleForBaseIconScale(const QString& spriteType, qreal baseIconScale) const;
-    TimelineQuickHoldTextureParts holdTextureParts(const QString& spriteType, qreal scale, bool candidate = false);
+    TimelineQuickHoldTextureParts holdTextureParts(const QString& spriteType, qreal scale);
 
     // beta7 leak gauge (probe 3.1) — read of the texture and hold-part caches plus the count of
     // rotation-bearing note keys (slide-track arrows) and the cumulative texture-create total.
