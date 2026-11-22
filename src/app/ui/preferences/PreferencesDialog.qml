@@ -1263,11 +1263,6 @@ AppDialog {
                                         onMoved: v => root.noaCopilot[modelData.key] = Math.round(v)
                                     }
                                 }
-                                AppCheckBox {
-                                    text: "保存音频特征"
-                                    checked: root.noaCopilot?.saveAudioFeatures ?? true
-                                    onClicked: root.noaCopilot.saveAudioFeatures = checked
-                                }
                                 PreferenceSlider {
                                     label: "slide出现概率"
                                     suffix: "x"
@@ -1307,6 +1302,8 @@ AppDialog {
 
                             PreferenceGroup {
                                 title: "守护进程与缓存管理"
+                                readonly property bool cacheInfoVisible: visible && root.opened
+                                onCacheInfoVisibleChanged: root.noaCopilot?.setCacheInfoVisible(cacheInfoVisible)
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -1316,7 +1313,7 @@ AppDialog {
                                         Layout.fillWidth: true
                                         text: root.noaCopilot
                                             ? ("守护状态: " + root.noaCopilot.statusMessage
-                                               + "  |  音频特征磁盘缓存: " + root.noaCopilot.audioCacheSizeText)
+                                               + "  |  索引缓存总占用: " + root.noaCopilot.audioCacheSizeText)
                                             : ""
                                         color: Theme.colors.text.secondary
                                         font.family: Theme.uiFont
@@ -1325,7 +1322,8 @@ AppDialog {
                                     }
 
                                     AppButton {
-                                        text: "清理特征缓存"
+                                        text: "清理全部缓存"
+                                        enabled: root.noaCopilot && !root.noaCopilot.cacheCleaning
                                         onClicked: if (root.noaCopilot) root.noaCopilot.clearAudioCache()
                                     }
 
@@ -1339,6 +1337,12 @@ AppDialog {
                                         onClicked: if (root.noaCopilot) root.noaCopilot.restartDaemon()
                                     }
                                 }
+                                Text {
+                                    visible: text.length > 0
+                                    text: root.noaCopilot?.cacheMessage ?? ""
+                                    color: Theme.colors.text.secondary
+                                }
+
                             }
                         }
                     }

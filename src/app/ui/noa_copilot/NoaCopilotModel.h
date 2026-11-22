@@ -70,7 +70,6 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(int lineAlignBeats READ lineAlignBeats WRITE setLineAlignBeats NOTIFY configChanged)
     Q_PROPERTY(int candidateCount READ candidateCount WRITE setCandidateCount NOTIFY configChanged)
     Q_PROPERTY(int cpuThreads READ cpuThreads WRITE setCpuThreads NOTIFY configChanged)
-    Q_PROPERTY(bool saveAudioFeatures READ saveAudioFeatures WRITE setSaveAudioFeatures NOTIFY configChanged)
     Q_PROPERTY(QString mertDevice READ mertDevice WRITE setMertDevice NOTIFY configChanged)
     Q_PROPERTY(QString cpuPython READ cpuPython WRITE setCpuPython NOTIFY configChanged)
     Q_PROPERTY(QString cudaPython READ cudaPython WRITE setCudaPython NOTIFY configChanged)
@@ -101,6 +100,8 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(QString customSourceDir READ customSourceRoot WRITE setCustomSourceRoot NOTIFY configChanged)
     Q_PROPERTY(QString resolvedSourceRoot READ resolvedSourceRoot NOTIFY configChanged)
     Q_PROPERTY(QString resolvedSourceDir READ resolvedSourceRoot NOTIFY configChanged)
+    Q_PROPERTY(QString cacheMessage READ cacheMessage NOTIFY cacheInfoChanged)
+    Q_PROPERTY(bool cacheCleaning READ cacheCleaning NOTIFY cacheInfoChanged)
     Q_PROPERTY(QString audioCacheSizeText READ audioCacheSizeText NOTIFY cacheInfoChanged)
 
     // ---- Workflow 1: Inline Ghost State ----
@@ -196,6 +197,8 @@ public:
     void setCustomSourceRoot(const QString& path);
     QString resolvedSourceRoot() const;
 
+    QString cacheMessage() const { return cacheMessage_; }
+    bool cacheCleaning() const { return cacheCleaning_; }
     QString audioCacheSizeText() const { return audioCacheSizeText_; }
 
     bool ghostActive() const { return ghostActive_; }
@@ -223,8 +226,6 @@ public:
     void setCandidateCount(int value);
     int cpuThreads() const { return cpuThreads_; }
     void setCpuThreads(int value);
-    bool saveAudioFeatures() const { return saveAudioFeatures_; }
-    void setSaveAudioFeatures(bool value);
     QString mertDevice() const { return mertDevice_; }
     void setMertDevice(QString value);
     QString cpuPython() const;
@@ -286,6 +287,10 @@ public:
     Q_INVOKABLE void unloadModelMemory() { releaseVram(); }
     Q_INVOKABLE void restartDaemon();
     Q_INVOKABLE void refreshAudioCacheSize();
+    Q_INVOKABLE void setCacheInfoVisible(bool visible) {
+        cacheInfoVisible_ = visible;
+        if (visible) refreshAudioCacheSize();
+    }
 
 signals:
     void configChanged();
@@ -307,7 +312,13 @@ private:
 
     QString defaultBuiltinRoot() const;
     QString defaultCheckpointsDir() const;
-    QString resolvedCacheDir() const;
+    void scanCacheIndex(bool clear);
+    void finishCacheBarrier();
+    bool supportsCacheBarrier_ = false, waitingForCacheBarrier_ = false;
+    bool cacheScanActive_ = false, cacheCleaning_ = false;
+    bool cacheRefreshPending_ = false, cacheInfoVisible_ = false;
+    QList<QJsonObject> deferredCacheRequests_;
+    QString cacheMessage_;
 
     void ensureDaemonRunning();
     void stopDaemon();
@@ -350,7 +361,6 @@ private:
     int continuationLines_ = 4;
     int candidateCount_ = 3;
     int cpuThreads_ = 4;
-    bool saveAudioFeatures_ = true;
     QString mertDevice_ = QStringLiteral("cpu");
     QString cpuPython_ = {};
     QString cudaPython_ = {};

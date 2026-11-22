@@ -16,7 +16,7 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
-#include <QDirIterator>
+#include "app/ui/noa_copilot/NoaCacheIndex.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -25,6 +25,7 @@
 #include <QScopedValueRollback>
 #include <QThread>
 #include <memory>
+#include <utility>
 #include "app/ui/noa_copilot/NoaEnvironments.h"
 #include <QProcessEnvironment>
 #include <QRegularExpression>
@@ -54,6 +55,8 @@ QString formatBytesText(qint64 bytes)
     if (bytes <= 0) {
         return QStringLiteral("0 MB");
     }
+    if (bytes < 1024) return QStringLiteral("%1 B").arg(bytes);
+    if (bytes < 1024 * 1024) return QStringLiteral("%1 KB").arg(double(bytes) / 1024.0, 0, 'f', 1);
     const double mb = static_cast<double>(bytes) / (1024.0 * 1024.0);
     if (mb < 1024.0) {
         return QStringLiteral("%1 MB").arg(mb, 0, 'f', 1);
@@ -139,12 +142,12 @@ NoaCopilotModel::NoaCopilotModel(
 
     // Ensure default checkpoints directory exists so users can drop .ckpt files into it.
     QDir().mkpath(defaultCheckpointsDir());
-    QDir().mkpath(resolvedCacheDir());
 
     rebuildDesignerOptions({});
     loadPreferences();
     refreshCheckpoints();
-    refreshAudioCacheSize();
+    if (QFileInfo::exists(QDir(defaultBuiltinRoot()).filePath(".miacode/.noacopilot")))
+        noa_cache::rememberProject(defaultBuiltinRoot());
     scanEnvironments(false);
 
     connect(&document_, &DocumentModel::documentStateChanged, this, [this]() {
@@ -164,6 +167,9 @@ NoaCopilotModel::NoaCopilotModel(
         emit emptyCardChanged();
     });
     connect(&document_, &DocumentModel::currentFilePathChanged, this, [this]() {
+        const auto chart = document_.currentFilePath();
+        if (!chart.isEmpty() && QFileInfo::exists(QFileInfo(chart).dir().filePath(".miacode/.noacopilot")))
+            noa_cache::rememberProject(QFileInfo(chart).absolutePath());
         sendBindSongIfNeeded();
     });
     connect(&document_, &DocumentModel::metadataChanged, this, [this]() {
@@ -246,15 +252,6 @@ QString NoaCopilotModel::resolvedSourceRoot() const
     return QDir(defaultBuiltinRoot()).filePath(QStringLiteral("runtime-src"));
 }
 
-QString NoaCopilotModel::resolvedCacheDir() const
-{
-    const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    if (!appData.isEmpty()) {
-        return QDir::cleanPath(QDir(appData).filePath(QStringLiteral("noa-copilot/cache")));
-    }
-    return QDir::cleanPath(QDir(defaultBuiltinRoot()).filePath(QStringLiteral("cache")));
-}
-
 QVariantList NoaCopilotModel::deviceModeOptions() const
 {
     return {QVariantMap{{"value","cpu"},{"label","CPU"},{"enabled",cpuAvailable_}},
@@ -294,8 +291,6 @@ void NoaCopilotModel::loadPreferences()
     continuationLines_ = qBound(1, sec["continuation_lines"].toInt(4), 64);
     candidateCount_ = qBound(1, sec["candidate_count"].toInt(3), 8);
     cpuThreads_ = sec["cpu_threads"].toInt(4);
-    saveAudioFeatures_ = sec["save_audio_features"].toBool(
-        sec["mert_cache"].toBool(true) && sec["roformer_cache"].toBool(true));
     mertDevice_ = sec["mert_device"].toString(QStringLiteral("cpu"));
     cpuPython_ = sec["cpu_python"].toString();
     cudaPython_ = sec["cuda_python"].toString();
@@ -338,7 +333,6 @@ void NoaCopilotModel::savePreferences() const
     sec["continuation_lines"] = continuationLines_;
     sec["candidate_count"] = candidateCount_;
     sec["cpu_threads"] = cpuThreads_;
-    sec["save_audio_features"] = saveAudioFeatures_;
     sec["mert_device"] = mertDevice_;
     sec["cpu_python"] = cpuPython_;
     sec["cuda_python"] = cudaPython_;
@@ -528,15 +522,6 @@ void NoaCopilotModel::setCpuThreads(int value)
     savePreferences();
     emit configChanged();
     if (enabled_) restartDaemon();
-}
-
-void NoaCopilotModel::setSaveAudioFeatures(bool value)
-{
-    if (saveAudioFeatures_ == value) return;
-    saveAudioFeatures_ = value;
-    savePreferences();
-    emit configChanged();
-    warmTimer_.start();
 }
 
 void NoaCopilotModel::setMertDevice(QString value)
@@ -854,37 +839,55 @@ void NoaCopilotModel::browseCustomSourceRoot()
 
 void NoaCopilotModel::refreshAudioCacheSize()
 {
-    qint64 totalBytes = 0;
-    if (document_.currentFilePath().isEmpty()) { audioCacheSizeText_ = "0 MB"; emit cacheInfoChanged(); return; }
-    const QDir project(QFileInfo(document_.currentFilePath()).dir().filePath(".miacode/.noacopilot"));
-    QDirIterator it(project.absolutePath(), {"mert_*.pt","roformer_*.pt","drafter_*.pt"}, QDir::Files);
-    while (it.hasNext()) {
-        it.next();
-        totalBytes += it.fileInfo().size();
-    }
-    const QString nextText = formatBytesText(totalBytes);
-    if (audioCacheSizeText_ != nextText) {
-        audioCacheSizeText_ = nextText;
+    if (cacheCleaning_) return;
+    if (cacheScanActive_) cacheRefreshPending_ = true;
+    else scanCacheIndex(false);
+}
+
+void NoaCopilotModel::scanCacheIndex(bool clear)
+{
+    cacheScanActive_ = true;
+    cacheRefreshPending_ = false;
+    auto result = std::make_shared<noa_cache::Usage>();
+    auto* thread = QThread::create([clear, result] { *result = noa_cache::inspect(clear); });
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    connect(thread, &QThread::finished, this, [this, clear, result] {
+        cacheScanActive_ = false;
+        audioCacheSizeText_ = formatBytesText(result->bytes);
+        if (clear) {
+            cacheCleaning_ = false;
+            cacheMessage_ = QStringLiteral("清理成功 %1 个，失败 %2 个").arg(result->removed).arg(result->failed);
+            const auto queued = std::exchange(deferredCacheRequests_, {});
+            for (const auto& request : queued) writeDaemonJson(request);
+        } else if (cacheCleaning_ && !waitingForCacheBarrier_) {
+            scanCacheIndex(true);
+        } else if (cacheRefreshPending_ && !cacheCleaning_) {
+            scanCacheIndex(false);
+        }
         emit cacheInfoChanged();
-    }
+    });
+    thread->start();
 }
 
 void NoaCopilotModel::clearAudioCache()
 {
-    if (daemonProcess_ != nullptr && daemonProcess_->state() == QProcess::Running) {
-        QJsonObject cmd;
-        cmd.insert(QStringLiteral("op"), QStringLiteral("clear_cache"));
-        cmd.insert(QStringLiteral("id"), nextRpcId_++);
-        writeDaemonJson(cmd);
+    if (cacheCleaning_) return;
+    cacheCleaning_ = true;
+    cacheMessage_ = QStringLiteral("正在清理缓存…");
+    emit cacheInfoChanged();
+    if (supportsCacheBarrier_ && daemonConfigured_ && daemonProcess_ && daemonProcess_->state() == QProcess::Running) {
+        waitingForCacheBarrier_ = true;
+        writeDaemonJson({{"op","cache_barrier"},{"id",nextRpcId_++}});
+    } else if (!cacheScanActive_) {
+        scanCacheIndex(true);
     }
-    if (!document_.currentFilePath().isEmpty()) {
-        const QDir cacheDir(QFileInfo(document_.currentFilePath()).dir().filePath(".miacode/.noacopilot"));
-        for (const auto& name : cacheDir.entryList({"mert_*.pt","roformer_*.pt","drafter_*.pt","manifest.json"},QDir::Files))
-            QFile::remove(cacheDir.filePath(name));
-    }
-    boundSongKey_.clear();
-    lastWarmSignature_ = {};
-    refreshAudioCacheSize();
+}
+
+void NoaCopilotModel::finishCacheBarrier()
+{
+    if (!waitingForCacheBarrier_) return;
+    waitingForCacheBarrier_ = false;
+    if (!cacheScanActive_) scanCacheIndex(true);
 }
 
 void NoaCopilotModel::releaseVram()
@@ -978,6 +981,8 @@ void NoaCopilotModel::ensureDaemonRunning()
         qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
         this,
         [this](int exitCode, QProcess::ExitStatus) {
+            deferredCacheRequests_.clear();
+            finishCacheBarrier();
             endFullStream();
             daemonConfigured_ = false;
             checkpointLoadedInDaemon_ = false;
@@ -995,7 +1000,7 @@ void NoaCopilotModel::ensureDaemonRunning()
         });
 
     updateStatus(QStringLiteral("starting"), QStringLiteral("正在启动..."));
-    const QStringList args{QStringLiteral("-u"), QStringLiteral("-m"), QStringLiteral("maidata.spine.copilot")};
+    const QStringList args{QStringLiteral("-B"), QStringLiteral("-u"), QStringLiteral("-m"), QStringLiteral("maidata.spine.copilot")};
     connect(daemonProcess_, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart)
             updateStatus(QStringLiteral("error"), QStringLiteral("无法启动推理环境"), daemonProcess_->errorString());
@@ -1014,6 +1019,8 @@ void NoaCopilotModel::ensureDaemonRunning()
 
 void NoaCopilotModel::stopDaemon()
 {
+    deferredCacheRequests_.clear();
+    finishCacheBarrier();
     endFullStream();
     stdoutBuffer_.clear();
     warmTimer_.stop();
@@ -1048,6 +1055,14 @@ void NoaCopilotModel::writeDaemonJson(const QJsonObject& payload)
     if (daemonProcess_ == nullptr || daemonProcess_->state() != QProcess::Running) {
         return;
     }
+    const auto op = payload["op"].toString();
+    if (cacheCleaning_ && op != "cache_barrier" && op != "close") {
+        deferredCacheRequests_.append(payload);
+        return;
+    }
+    const QString audio = payload["audio"].toString();
+    if (!audio.isEmpty() && (op == "bind_song" || op == "suggest" || op == "warm"))
+        noa_cache::rememberProject(QFileInfo(audio).absolutePath());
     const QByteArray line = QJsonDocument(payload).toJson(QJsonDocument::Compact) + '\n';
     daemonProcess_->write(line);
 }
@@ -1080,7 +1095,11 @@ void NoaCopilotModel::sendConfigureRequest()
     req.insert(QStringLiteral("device"), device_);
     req.insert(QStringLiteral("precision"), precision_);
     req.insert(QStringLiteral("models"), QDir(defaultBuiltinRoot()).filePath(QStringLiteral("models")));
-    req.insert(QStringLiteral("cache_dir"), resolvedCacheDir());
+    // Older custom daemons require this configure field even before a song is open.
+    const auto song = document_.currentFilePath();
+    const QDir base(song.isEmpty() ? defaultBuiltinRoot() : QFileInfo(song).absolutePath());
+    noa_cache::rememberProject(base.absolutePath());
+    req.insert(QStringLiteral("cache_dir"), base.filePath(".miacode/.noacopilot"));
     writeDaemonJson(req);
 }
 
@@ -1285,8 +1304,7 @@ QJsonObject NoaCopilotModel::chartRequest() const
     QJsonObject request{{"protocol",2},{"audio",miacode::chart_assets::resolveTrackPath(document_.currentFilePath())},
         {"first",currentChartFirstSeconds()},{"bpm",currentChartBpm()},
         {"level",parseLevelNumeric(document_.currentDifficultyLevel())},{"difficulty",document_.currentDifficultyId()},
-        {"designer",effectiveDesigner()},{"line_align_beats",lineAlignBeats_},{"candidate_count",candidateCount_},
-        {"mert_cache",saveAudioFeatures_},{"roformer_cache",saveAudioFeatures_}};
+        {"designer",effectiveDesigner()},{"line_align_beats",lineAlignBeats_},{"candidate_count",candidateCount_}};
     for (const auto& key : {QStringLiteral("shortid"),QStringLiteral("cabinet"),QStringLiteral("version")}) {
         QRegularExpression field("^&" + key + "=([^\\r\\n]+)",QRegularExpression::MultilineOption);
         const auto match = field.match(extra);
@@ -1683,7 +1701,10 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
     const QString event = message.value(QStringLiteral("event")).toString();
     if ((event == "result" || event == "stream_chunk") && message["id"].toInt() == activeRequestId_
         && message.contains("end_second")) continuationEndSecond_ = message["end_second"].toDouble();
+    if (event == "cache_barrier") { finishCacheBarrier(); return; }
+    if (event == "cache_updated") { if (cacheInfoVisible_) refreshAudioCacheSize(); return; }
     if (event == QStringLiteral("configured")) {
+        supportsCacheBarrier_ = message["cache_barrier"].toBool();
         daemonConfigured_ = message.value(QStringLiteral("ok")).toBool();
         checkpointLoadedInDaemon_ = message.value(QStringLiteral("checkpoint_loaded")).toBool();
         orderedSteps_ = message.value(QStringLiteral("ordered_steps")).toBool();
@@ -1739,7 +1760,7 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         if (id == pendingBindSongId_ || id <= 0) {
             pendingBindSongId_ = 0;
         }
-        refreshAudioCacheSize();
+        if (cacheInfoVisible_) refreshAudioCacheSize();
         if (activeRequestId_ > 0) {
             if (statusState_ == QStringLiteral("warming_audio")) {
                 const QString genLabel = activeRequestMode_ == QStringLiteral("full")
@@ -1843,7 +1864,7 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         }
 
         updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
-        refreshAudioCacheSize();
+        if (cacheInfoVisible_) refreshAudioCacheSize();
 
         if (activeRequestRevision_ != document_.documentRevision()) {
             activeRequestId_ = 0;
