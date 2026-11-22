@@ -38,7 +38,9 @@ Item {
             ? baseTitle + " — " + documentSession.currentDifficultyLabel
             : baseTitle
     }
-    readonly property bool beginnerGuideActive: beginnerGuide.visible || setupWizard.visible
+    readonly property bool beginnerGuideActive: (beginnerGuide.visible && !beginnerGuide.interactiveWorkspace) || setupWizard.visible
+    property bool noaGuideExpandedBottomPanel: false
+    property bool noaGuidePreviousBottomPanel: true
     readonly property bool editorActive: state.hasActiveEditor && !pages.overlayActive
         && !beginnerGuideActive
     readonly property bool currentEditorSaveEnabled: editorActive
@@ -310,21 +312,43 @@ Item {
         beginnerGuide.openFromId("noa-continuation")
     }
 
+    function leaveNoaGuidePractice() {
+        if (root.noaCopilot && root.noaCopilot.guidePracticeActive)
+            root.noaCopilot.stopGuidePractice()
+        if (root.documentSession.guidePracticeDocumentActive)
+            root.documentSession.endGuidePracticeDocument()
+        if (root.noaGuideExpandedBottomPanel) {
+            state.bottomPanelVisible = root.noaGuidePreviousBottomPanel
+            root.noaGuideExpandedBottomPanel = false
+        }
+    }
+
     function syncNoaGuideHost() {
         const sectionId = beginnerGuide.visible && beginnerGuide.selectedSection
             ? beginnerGuide.selectedSection.id : ""
         if (sectionId === "noa-continuation") {
             preferencesDialog.closeNoaGuide()
-            if (!noaGuideSandbox.visible)
-                noaGuideSandbox.open()
+            if (!root.documentSession.guidePracticeDocumentActive) {
+                root.noaGuidePreviousBottomPanel = state.bottomPanelVisible
+                if (!state.bottomPanelVisible) {
+                    state.bottomPanelVisible = true
+                    root.noaGuideExpandedBottomPanel = true
+                }
+                if (root.documentSession.beginGuidePracticeDocument() && root.noaCopilot) {
+                    root.pages.ensureDifficultyPageActive(root.documentSession.currentDifficultyId)
+                    state.activeSidebarView = "chart"
+                    root.noaCopilot.startGuidePractice()
+                }
+            }
             Qt.callLater(() => {
-                if (beginnerGuide.visible)
+                if (beginnerGuide.visible && beginnerGuide.interactiveWorkspace) {
+                    splitView.sourceEditorItem.focusEditor()
                     beginnerGuide.bumpLayout()
+                }
             })
             return
         }
-        if (noaGuideSandbox.visible)
-            noaGuideSandbox.close()
+        root.leaveNoaGuidePractice()
         if (sectionId === "noa-prefs-temperature" || sectionId === "noa-prefs-environment") {
             preferencesDialog.showNoaGuideStep(sectionId)
         } else {
@@ -707,18 +731,29 @@ Item {
         onFinished: beginnerGuide.open()
     }
 
-    NoaCopilotGuideSandbox {
-        id: noaGuideSandbox
-        objectName: "noaCopilotGuideSandbox"
-    }
-
     BeginnerGuideOverlay {
         id: beginnerGuide
         objectName: "beginnerGuideOverlay"
-        interactiveActiveKey: beginnerGuide.visible
-            && beginnerGuide.selectedSection
-            && beginnerGuide.selectedSection.id === "noa-continuation"
-            ? noaGuideSandbox.expectedKey : ""
+        interactiveActiveKey: beginnerGuide.interactiveWorkspace && root.noaCopilot
+            ? root.noaCopilot.guidePracticeExpectedKey : ""
+        interactivePrompt: beginnerGuide.interactiveWorkspace && root.noaCopilot
+            ? root.noaCopilot.guidePracticePrompt : ""
+        interactiveCompletedSteps: beginnerGuide.interactiveWorkspace && root.noaCopilot
+            ? root.noaCopilot.guidePracticeCompletedSteps : 0
+        interactiveCurrentStepIndex: {
+            if (!beginnerGuide.interactiveWorkspace || !root.noaCopilot)
+                return -1
+            const st = root.noaCopilot.guidePracticeStage
+            if (st === 0) return 0
+            if (st === 2) return 1
+            if (st === 3) return 2
+            if (st === 4) return 3
+            if (st === 5) return 4
+            if (st === 6) return 5
+            if (st === 7) return 6
+            return -1
+        }
+        interactiveStepSequence: ["Tab", "↓", "↓", "↑", "→", "→", "Tab"]
         onVisibleChanged: root.syncNoaGuideHost()
         onSelectedIndexChanged: root.syncNoaGuideHost()
         onClosed: {
@@ -861,14 +896,18 @@ Item {
         ]).concat(root.noaCopilot ? [
             {
                 id: "noa-continuation",
-                target: noaGuideSandbox.guideTargetItem,
+                interactiveWorkspace: true,
+                target: splitView.sourceEditorItem,
                 fallbackTarget: statusBar.noaCopilotPillItem,
                 hint: qsTrId("guide.noa.continuation.hint"),
                 title: qsTrId("guide.noa.continuation.title"),
-                cardWidth: 440,
+                cardWidth: 380,
                 columns: 2,
-                keyHandler: key => noaGuideSandbox.handleKey(key),
-                symbolHandler: symbol => noaGuideSandbox.triggerSymbol(symbol),
+                symbolHandler: symbol => {
+                    if (root.noaCopilot)
+                        root.noaCopilot.triggerGuideSymbol(symbol)
+                    splitView.sourceEditorItem.focusEditor()
+                },
                 features: [
                     { kind: "key", sample: "Tab", label: qsTrId("guide.noa.continuation.tab") },
                     { kind: "key", sample: "↓", label: qsTrId("guide.noa.continuation.down") },

@@ -280,6 +280,9 @@ DocumentModel::DocumentModel(
 
 DocumentModel::~DocumentModel()
 {
+    if (!guidePracticeTempPath_.isEmpty()) {
+        QFile::remove(guidePracticeTempPath_);
+    }
     if (bridge() != nullptr) {
         bridge()->setDocumentSaveHandler({});
         bridge()->setChartTextHandler({});
@@ -1432,6 +1435,103 @@ bool DocumentModel::openFile(const QUrl& fileUrl)
         return ensureTrackCopyThenCreate(path, chartPath);
     }
     return openFileWithOrigin(fileUrl, ChartDocumentOrigin::Local);
+}
+
+bool DocumentModel::beginGuidePracticeDocument()
+{
+    if (workspace_ == nullptr) {
+        return false;
+    }
+    if (guidePracticeDocumentActive_) {
+        return true;
+    }
+    finishPendingEdits();
+    const auto snap = workspace_->snapshot();
+    guideSavedState_ = {};
+    guideSavedState_.hadDocument = snap.hasDocument;
+    guideSavedState_.filePath = snap.filePath;
+    guideSavedState_.sourceText = snap.sourceText;
+    guideSavedState_.activeDifficultyId = snap.activeDifficultyId;
+    guideSavedState_.dirty = snap.dirty;
+    guideSavedState_.origin = snap.origin;
+    guideSavedState_.unifiedDesigner = unifiedDesignerEnabled_;
+
+    const QString tempRoot = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                 .filePath(QStringLiteral("miacode-noa-guide"));
+    QDir().mkpath(tempRoot);
+    const QString tempPath = QDir(tempRoot).filePath(QStringLiteral("maidata.txt"));
+    const QString practiceContent = QStringLiteral(
+        "&title=NoaCopilot 续写引导\n"
+        "&artist=MiaCode\n"
+        "&first=0\n"
+        "&wholebpm=200\n"
+        "&lv_5=14\n"
+        "&des_5=NoaCopilot\n"
+        "&inote_5=\n"
+        "(200){16}2,3,4,5,7,5,6,4,8,7,6,5,2,4,1,5,\n"
+        "{48}2,,,3,,,4,,,5,,,68,,,5,,,4,,,3,,,8/2,,7,,6,,5,,4,,3,,2,,1,,8,,7,,6,,5,,\n");
+    QFile tempFile(tempPath);
+    if (!tempFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        return false;
+    }
+    tempFile.write(practiceContent.toUtf8());
+    tempFile.close();
+
+    guidePracticeTempPath_ = tempPath;
+    if (!openFileWithOrigin(QUrl::fromLocalFile(tempPath), ChartDocumentOrigin::NetPreview)) {
+        QFile::remove(tempPath);
+        guidePracticeTempPath_.clear();
+        return false;
+    }
+    if (currentDifficultyId() != 5) {
+        selectDifficulty(5);
+    }
+    guidePracticeDocumentActive_ = true;
+    emit guidePracticeDocumentActiveChanged();
+    return true;
+}
+
+void DocumentModel::endGuidePracticeDocument()
+{
+    if (!guidePracticeDocumentActive_) {
+        return;
+    }
+    guidePracticeDocumentActive_ = false;
+    emit guidePracticeDocumentActiveChanged();
+
+    const GuideSavedDocumentState saved = guideSavedState_;
+    guideSavedState_ = {};
+    const QString tempPath = guidePracticeTempPath_;
+    guidePracticeTempPath_.clear();
+
+    if (workspace_ != nullptr) {
+        if (!saved.hadDocument) {
+            closeDocument();
+        } else if (!saved.filePath.isEmpty() && QFileInfo::exists(saved.filePath)) {
+            openFileWithOrigin(QUrl::fromLocalFile(saved.filePath), saved.origin);
+            if (saved.dirty && !saved.sourceText.isEmpty()) {
+                runWorkspaceMutation([&] {
+                    return workspace_->replaceSource(saved.sourceText).accepted;
+                });
+                publishWorkspaceCommit(WorkspaceCommitKind::SourceReplacement, true);
+            }
+            if (saved.activeDifficultyId > 0 && currentDifficultyId() != saved.activeDifficultyId) {
+                selectDifficulty(saved.activeDifficultyId);
+            }
+        } else if (!saved.sourceText.isEmpty()) {
+            runWorkspaceMutation([&] {
+                return workspace_->openSource(
+                    saved.sourceText, saved.filePath, saved.activeDifficultyId, saved.origin).accepted;
+            });
+            publishWorkspaceCommit(WorkspaceCommitKind::Open, true);
+        } else {
+            closeDocument();
+        }
+    }
+
+    if (!tempPath.isEmpty()) {
+        QFile::remove(tempPath);
+    }
 }
 
 QJsonObject DocumentModel::documentIdentity() const

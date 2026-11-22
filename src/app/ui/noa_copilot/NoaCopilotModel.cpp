@@ -192,10 +192,29 @@ NoaCopilotModel::NoaCopilotModel(
         const QString chart = document_.chartText();
         if (chart != lastObservedEditorText_) {
             lastObservedEditorText_ = chart;
-            if (!fullStreamingActive_) notifyEditorCursorOrTextChanged(lastCursorPos_, lastSelStart_, lastSelEnd_, true);
+            if (!fullStreamingActive_ && !guidePracticeActive_) {
+                notifyEditorCursorOrTextChanged(lastCursorPos_, lastSelStart_, lastSelEnd_, true);
+            }
         }
-        if (!fullStreamingActive_) warmTimer_.start();
+        if (!fullStreamingActive_ && !guidePracticeActive_) warmTimer_.start();
         emit emptyCardChanged();
+    });
+
+    guideStreamTimer_.setInterval(75);
+    connect(&guideStreamTimer_, &QTimer::timeout, this, [this]() {
+        if (!guidePracticeActive_ || guideStage_ != 1) {
+            guideStreamTimer_.stop();
+            return;
+        }
+        if (guideStreamBeat_ < 16) {
+            ++guideStreamBeat_;
+            showGuideCandidate();
+        } else {
+            guideStreamTimer_.stop();
+            guideStage_ = 2;
+            showGuideCandidate();
+            emit guidePracticeChanged();
+        }
     });
 
     if (enabled_) {
@@ -658,7 +677,7 @@ void NoaCopilotModel::setCustomSourceRoot(const QString& path)
 
 bool NoaCopilotModel::emptyCardVisible() const
 {
-    if (!enabled_ || !document_.hasDocument() || document_.wholeSourceEditorActive()) {
+    if (guidePracticeActive_ || !enabled_ || !document_.hasDocument() || document_.wholeSourceEditorActive()) {
         return false;
     }
     const int diffId = document_.currentDifficultyId();
@@ -1105,7 +1124,7 @@ void NoaCopilotModel::sendConfigureRequest()
 
 void NoaCopilotModel::sendBindSongIfNeeded()
 {
-    if (!enabled_ || !document_.hasDocument()) {
+    if (guidePracticeActive_ || !enabled_ || !document_.hasDocument()) {
         return;
     }
     const QString audioPath = miacode::chart_assets::resolveTrackPath(document_.currentFilePath());
@@ -1153,7 +1172,7 @@ void NoaCopilotModel::sendBindSongIfNeeded()
 
 void NoaCopilotModel::sendSyncChartIfNeeded()
 {
-    if (!needsChartSync_ || !enabled_ || !daemonConfigured_ || !document_.hasDocument() || document_.currentDifficultyId() <= 0) {
+    if (guidePracticeActive_ || !needsChartSync_ || !enabled_ || !daemonConfigured_ || !document_.hasDocument() || document_.currentDifficultyId() <= 0) {
         return;
     }
     const quint64 rev = document_.documentRevision();
@@ -2118,6 +2137,12 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
     bool textChanged)
 {
     if (acceptingStep_) return;
+    if (guidePracticeActive_) {
+        lastCursorPos_ = cursorPos;
+        lastSelStart_ = selStart;
+        lastSelEnd_ = selEnd;
+        return;
+    }
     lastCursorPos_ = cursorPos;
     lastSelStart_ = selStart;
     lastSelEnd_ = selEnd;
@@ -2139,12 +2164,14 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
 
 bool NoaCopilotModel::candidateSessionActive() const
 {
+    if (guidePracticeActive_) return guideStage_ >= 1 && guideStage_ <= 7;
     return enabled_ && !fullStreamingActive_ && (ghostActive_ || !candidates_.isEmpty()
         || (activeRequestId_ > 0 && activeRequestMode_ == QStringLiteral("continue")));
 }
 
 bool NoaCopilotModel::handleCandidateKey(int key)
 {
+    if (guidePracticeActive_) return handleGuideKey(key);
     if (!candidateSessionActive()) return false;
     if (key == Qt::Key_Up || key == Qt::Key_Down) {
         switchCandidate(key == Qt::Key_Up ? -1 : 1);
@@ -2158,6 +2185,12 @@ bool NoaCopilotModel::handleCandidateKey(int key)
 
 bool NoaCopilotModel::handleEditorKeyPress(int key, int modifiers)
 {
+    if (guidePracticeActive_) {
+        if (modifiers == Qt::NoModifier) {
+            return handleGuideKey(key);
+        }
+        return false;
+    }
     if (!enabled_) {
         return false;
     }
@@ -2389,6 +2422,16 @@ void NoaCopilotModel::dismissGhost()
 
 void NoaCopilotModel::dismissAllActivePreviews()
 {
+    if (guidePracticeActive_) {
+        if (guideStage_ >= 1 && guideStage_ <= 7) {
+            QTimer::singleShot(0, this, [this]() {
+                if (guidePracticeActive_ && guideStage_ >= 1 && guideStage_ <= 7) {
+                    showGuideCandidate();
+                }
+            });
+        }
+        return;
+    }
     if (activeRequestId_ > 0
         && activeRequestMode_ == QStringLiteral("continue")) {
         cancelActiveGeneration();
@@ -2396,6 +2439,332 @@ void NoaCopilotModel::dismissAllActivePreviews()
     if (ghostActive_ || ghostStreaming_) {
         dismissGhost();
     }
+}
+
+namespace {
+const QStringList& guideGroup1Beats()
+{
+    static const QStringList beats = {
+        QStringLiteral("{4}4/7>8-5p4[4:3],"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
+        QStringLiteral("\n{4},"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
+        QStringLiteral("\n{4},"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
+        QStringLiteral("\n{4},"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
+    };
+    return beats;
+}
+
+QString guideGroup2Full()
+{
+    return QStringLiteral(
+        "{12}24,3,3,64,5,5,38,2,1,68,7,8,\n"
+        "{32}1b/4b,,,,,,2b/7b,,,,,,8b/5b,,,,3,4,3,4,3,4,3,4,25,,,,,,,,\n"
+        "{12}7,5,6,3,5,4,6,5,5,4,5,5,\n"
+        "{6}6b-8[16:1],2b-4[16:1],1b-5[16:1],3b-8[16:1],7b-4[16:1],1b,");
+}
+
+QString guideGroup3Full()
+{
+    return QStringLiteral(
+        "{32}4,6,4,6,4,6,4,6,3,7,3,7,2,8,2,8,1,1,1,1,1,,,,B1/B2/E2f/A2/D2/E3,,,,,,,,\n"
+        "{32}5,3,5,3,5,3,5,3,6,2,6,2,7,1,7,1,8,8,8,8,8,,,,B7/E7/A7/B8/E8f/D8,,,,,,,,\n"
+        "{32}1,2,3,4,5,6,7,8,1,2,3,4,1,2,3,4,8,7,6,5,4,3,2,1,8,7,6,5,8,7,6,5,\n"
+        "{32}2,3,4,5,2,3,4,5,6pp4[4:1]*pp4[4:1],7,8,1,2,3,4,5,,,,,,,,,,,,,,,,,");
+}
+} // namespace
+
+int NoaCopilotModel::guidePracticeCompletedSteps() const
+{
+    if (guideStage_ <= 0) return 0;
+    if (guideStage_ == 1 || guideStage_ == 2) return 1;
+    if (guideStage_ == 3) return 2;
+    if (guideStage_ == 4) return 3;
+    if (guideStage_ == 5) return 4;
+    if (guideStage_ == 6) return 5;
+    if (guideStage_ == 7) return 6;
+    return 7;
+}
+
+QString NoaCopilotModel::guidePracticeExpectedKey() const
+{
+    if (guideStage_ == 0 || guideStage_ == 7) return QStringLiteral("Tab");
+    if (guideStage_ == 2 || guideStage_ == 3) return QStringLiteral("↓");
+    if (guideStage_ == 4) return QStringLiteral("↑");
+    if (guideStage_ == 5 || guideStage_ == 6) return QStringLiteral("→");
+    return {};
+}
+
+QString NoaCopilotModel::guidePracticePrompt() const
+{
+    switch (guideStage_) {
+    case 0: return qtTrId("guide.noa.sandbox.prompt.tab_start");
+    case 1: return qtTrId("guide.noa.sandbox.prompt.streaming");
+    case 2: return qtTrId("guide.noa.sandbox.prompt.down_1");
+    case 3: return qtTrId("guide.noa.sandbox.prompt.down_2");
+    case 4: return qtTrId("guide.noa.sandbox.prompt.up");
+    case 5: return qtTrId("guide.noa.sandbox.prompt.right_1");
+    case 6: return qtTrId("guide.noa.sandbox.prompt.right_2");
+    case 7: return qtTrId("guide.noa.sandbox.prompt.tab_accept");
+    default: return qtTrId("guide.noa.sandbox.prompt.done");
+    }
+}
+
+QString NoaCopilotModel::guideCandidateText() const
+{
+    if (guideCandidate_ == 1) {
+        const auto& beats = guideGroup1Beats();
+        const int count = qBound(0, guideStreamBeat_, int(beats.size()));
+        QString joined;
+        for (int i = 0; i < count; ++i) joined += beats.at(i);
+        return guidePrefixLead_ + joined;
+    }
+    if (guideCandidate_ == 2) {
+        const QString full = guideGroup2Full();
+        if (guideAcceptedBeats_ == 1) {
+            return full.mid(QStringLiteral("{12}24,3,3,").size());
+        }
+        if (guideAcceptedBeats_ >= 2) {
+            return full.mid(QStringLiteral("{12}24,3,3,64,5,5,").size());
+        }
+        return guidePrefixLead_ + full;
+    }
+    if (guideCandidate_ == 3) {
+        return guidePrefixLead_ + guideGroup3Full();
+    }
+    return {};
+}
+
+void NoaCopilotModel::showGuideCandidate()
+{
+    if (!guidePracticeActive_) return;
+    const QString text = guideCandidateText();
+    const QString source = document_.chartText();
+    const int insertPos = qBound(0, guideInsertPos_, int(source.size()));
+    guideInsertPos_ = insertPos;
+
+    ghostActive_ = !text.isEmpty();
+    ghostStreaming_ = (guideStage_ == 1);
+    ghostText_ = text;
+    ghostReplaceStart_ = insertPos;
+    ghostReplaceEnd_ = insertPos;
+    selected_ = guideCandidate_;
+    updateGhostSplitLines();
+    emit ghostStateChanged();
+    updateEditorGhostStrike();
+
+    if (text.isEmpty()) return;
+
+    const QString chart = source.left(insertPos) + text + source.mid(insertPos);
+    const int leadLen = (guideAcceptedBeats_ == 0) ? guidePrefixLead_.size() : 0;
+    const NoaAuditionRange range{
+        utf16OffsetToLineCol(chart, insertPos + leadLen),
+        utf16OffsetToLineCol(chart, insertPos + text.size())
+    };
+    const auto timing = document_.timingMetadata();
+    const double first = currentChartFirstSeconds();
+    const auto audition = noaAuditionMarkers(chart, range, first, timing, ghostLineCache_);
+    preview_.setCopilotReview(true);
+    preview_.setGhostPreviewOverlay(audition.ghost, false, 0, 0, 0, 0, guideStage_ == 1, &audition);
+
+    if (!ghostTimelineModel_) ghostTimelineModel_ = std::make_unique<TimelineQuickModel>();
+    ghostTimelineModel_->updateFromText(chart, first, timing);
+    TimelineRenderSnapshot normalTimeline = ghostTimelineModel_->snapshot();
+    TimelineRenderSnapshot ghostTimeline = normalTimeline;
+    for (qsizetype i = 0; i < ghostTimeline.lines.size(); ++i) {
+        const auto& line = normalTimeline.lines.at(i);
+        if (line.lineNumber < range.first.first || line.lineNumber > range.end.first) {
+            ghostTimeline.lines[i].notes.clear();
+        } else if (line.lineNumber > range.first.first && line.lineNumber < range.end.first) {
+            normalTimeline.lines[i].notes.clear();
+        } else {
+            const int lineNumber = line.lineNumber;
+            auto generated = [&](const auto& note) { return range.contains(lineNumber, note.sourceCol); };
+            normalTimeline.lines[i].notes.removeIf(generated);
+            ghostTimeline.lines[i].notes.removeIf([&](const auto& note) { return !generated(note); });
+        }
+    }
+    if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge())) {
+        bridge->setCandidateSnapshots(normalTimeline, ghostTimeline);
+    }
+}
+
+void NoaCopilotModel::startGuidePractice()
+{
+    guideStreamTimer_.stop();
+    const bool wasActive = guidePracticeActive_;
+    guidePracticeActive_ = false;
+    dismissAllActivePreviews();
+    warmTimer_.stop();
+
+    guidePracticeActive_ = true;
+    guideStage_ = 0;
+    guideCandidate_ = 0;
+    guideStreamBeat_ = 0;
+    guideAcceptedBeats_ = 0;
+    const QString initial = document_.chartText();
+    lastObservedEditorText_ = initial;
+    guideInsertPos_ = initial.size();
+    guidePrefixLead_ = (!initial.isEmpty() && !initial.endsWith(QLatin1Char('\n')))
+        ? QStringLiteral("\n")
+        : QString();
+
+    if (editorBridge_ != nullptr) {
+        editorBridge_->setProperty("cursorPosition", guideInsertPos_);
+        QTimer::singleShot(0, this, [this]() {
+            if (guidePracticeActive_ && guideStage_ == 0 && editorBridge_ != nullptr) {
+                editorBridge_->setProperty("cursorPosition", guideInsertPos_);
+            }
+        });
+    }
+    preview_.setPositionSeconds(0.0);
+    emit ghostStateChanged();
+    emit emptyCardChanged();
+    emit guidePracticeChanged();
+    Q_UNUSED(wasActive);
+}
+
+void NoaCopilotModel::stopGuidePractice()
+{
+    if (!guidePracticeActive_) return;
+    guideStreamTimer_.stop();
+    guidePracticeActive_ = false;
+    guideStage_ = 0;
+    guideCandidate_ = 0;
+    guideStreamBeat_ = 0;
+    guideAcceptedBeats_ = 0;
+    selected_ = 0;
+    dismissAllActivePreviews();
+    preview_.setCopilotReview(false);
+    preview_.clearGhostPreviewOverlay();
+    if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge())) {
+        bridge->clearCandidateSnapshots(false);
+    }
+    emit ghostStateChanged();
+    emit emptyCardChanged();
+    emit guidePracticeChanged();
+}
+
+bool NoaCopilotModel::triggerGuideSymbol(const QString& symbol)
+{
+    if (!guidePracticeActive_) return false;
+    if (symbol == QLatin1String("Tab")) return handleGuideKey(Qt::Key_Tab);
+    if (symbol == QLatin1String("↓")) return handleGuideKey(Qt::Key_Down);
+    if (symbol == QLatin1String("↑")) return handleGuideKey(Qt::Key_Up);
+    if (symbol == QLatin1String("→")) return handleGuideKey(Qt::Key_Right);
+    return false;
+}
+
+bool NoaCopilotModel::handleGuideKey(int key)
+{
+    if (!guidePracticeActive_) return false;
+    if (key != Qt::Key_Tab && key != Qt::Key_Down && key != Qt::Key_Up && key != Qt::Key_Right) {
+        return false;
+    }
+    if (guideStage_ == 8) {
+        return false;
+    }
+    if (guideStage_ == 1) {
+        notifyHint(qtTrId("guide.noa.sandbox.toast.wait_stream"));
+        return true;
+    }
+
+    if (key == Qt::Key_Tab) {
+        if (guideStage_ == 0) {
+            guideCandidate_ = 1;
+            guideStreamBeat_ = 1;
+            guideAcceptedBeats_ = 0;
+            guideStage_ = 1;
+            showGuideCandidate();
+            preview_.setPositionSeconds(2.4);
+            guideStreamTimer_.start();
+            emit guidePracticeChanged();
+            return true;
+        }
+        if (guideStage_ == 7) {
+            const QString remaining = guideCandidateText();
+            QScopedValueRollback guard(acceptingStep_, true);
+            ghostActive_ = false;
+            ghostStreaming_ = false;
+            ghostText_.clear();
+            ghostReplaceStart_ = 0;
+            ghostReplaceEnd_ = 0;
+            selected_ = 0;
+            updateGhostSplitLines();
+            updateEditorGhostStrike();
+            applyEditorReplacement(guideInsertPos_, guideInsertPos_, remaining, guideInsertPos_ + remaining.size());
+            guideInsertPos_ += remaining.size();
+            lastObservedEditorText_ = document_.chartText();
+            preview_.setCopilotReview(false);
+            preview_.clearGhostPreviewOverlay();
+            if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge())) {
+                bridge->clearCandidateSnapshots(true);
+            }
+            guideStage_ = 8;
+            preview_.setPositionSeconds(2.4);
+            emit ghostStateChanged();
+            emit guidePracticeChanged();
+            return true;
+        }
+        notifyHint(qtTrId("guide.noa.sandbox.toast.expected").arg(guidePracticeExpectedKey()));
+        return true;
+    }
+
+    if (key == Qt::Key_Down) {
+        if (guideStage_ == 2) {
+            guideCandidate_ = 2;
+            guideStage_ = 3;
+            showGuideCandidate();
+            preview_.setPositionSeconds(2.4);
+            emit guidePracticeChanged();
+            return true;
+        }
+        if (guideStage_ == 3) {
+            guideCandidate_ = 3;
+            guideStage_ = 4;
+            showGuideCandidate();
+            preview_.setPositionSeconds(2.4);
+            emit guidePracticeChanged();
+            return true;
+        }
+        notifyHint(qtTrId("guide.noa.sandbox.toast.expected").arg(guidePracticeExpectedKey()));
+        return true;
+    }
+
+    if (key == Qt::Key_Up) {
+        if (guideStage_ == 4) {
+            guideCandidate_ = 2;
+            guideStage_ = 5;
+            showGuideCandidate();
+            preview_.setPositionSeconds(2.4);
+            emit guidePracticeChanged();
+            return true;
+        }
+        notifyHint(qtTrId("guide.noa.sandbox.toast.expected").arg(guidePracticeExpectedKey()));
+        return true;
+    }
+
+    if (key == Qt::Key_Right) {
+        if (guideStage_ == 5 || guideStage_ == 6) {
+            const QString commitText = (guideStage_ == 5)
+                ? (guidePrefixLead_ + QStringLiteral("{12}24,3,3,"))
+                : QStringLiteral("64,5,5,");
+            QScopedValueRollback guard(acceptingStep_, true);
+            ghostActive_ = false;
+            applyEditorReplacement(guideInsertPos_, guideInsertPos_, commitText, guideInsertPos_ + commitText.size());
+            guideInsertPos_ += commitText.size();
+            if (guideStage_ == 5) guidePrefixLead_.clear();
+            lastObservedEditorText_ = document_.chartText();
+            guideAcceptedBeats_ = (guideStage_ == 5) ? 1 : 2;
+            guideStage_ = (guideStage_ == 5) ? 6 : 7;
+            showGuideCandidate();
+            preview_.setPositionSeconds(guideAcceptedBeats_ == 1 ? 2.7 : 3.0);
+            emit guidePracticeChanged();
+            return true;
+        }
+        notifyHint(qtTrId("guide.noa.sandbox.toast.expected").arg(guidePracticeExpectedKey()));
+        return true;
+    }
+
+    return false;
 }
 
 void NoaCopilotModel::dismissEmptyCard()

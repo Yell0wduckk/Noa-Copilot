@@ -117,6 +117,11 @@ class NoaCopilotModel final : public QObject
 
     // ---- Empty Difficulty Onboarding & Full-Chart Streaming ----
     Q_PROPERTY(bool emptyCardVisible READ emptyCardVisible NOTIFY emptyCardChanged)
+    Q_PROPERTY(bool guidePracticeActive READ guidePracticeActive NOTIFY guidePracticeChanged)
+    Q_PROPERTY(int guidePracticeStage READ guidePracticeStage NOTIFY guidePracticeChanged)
+    Q_PROPERTY(int guidePracticeCompletedSteps READ guidePracticeCompletedSteps NOTIFY guidePracticeChanged)
+    Q_PROPERTY(QString guidePracticeExpectedKey READ guidePracticeExpectedKey NOTIFY guidePracticeChanged)
+    Q_PROPERTY(QString guidePracticePrompt READ guidePracticePrompt NOTIFY guidePracticeChanged)
     Q_PROPERTY(bool fullStreamingActive READ fullStreamingActive NOTIFY streamingProgressChanged)
     Q_PROPERTY(double streamingProgress READ streamingProgress NOTIFY streamingProgressChanged)
     Q_PROPERTY(int streamingBeat READ streamingBeat NOTIFY streamingProgressChanged)
@@ -262,6 +267,14 @@ public:
     Q_INVOKABLE bool acceptGhostNextStep() { return acceptNextGhostStep(); }
     Q_INVOKABLE void dismissGhost();
     Q_INVOKABLE void dismissAllActivePreviews();
+    Q_INVOKABLE void startGuidePractice();
+    Q_INVOKABLE void stopGuidePractice();
+    Q_INVOKABLE bool triggerGuideSymbol(const QString& symbol);
+    bool guidePracticeActive() const { return guidePracticeActive_; }
+    int guidePracticeStage() const { return guideStage_; }
+    int guidePracticeCompletedSteps() const;
+    QString guidePracticeExpectedKey() const;
+    QString guidePracticePrompt() const;
 
     Q_INVOKABLE void dismissEmptyCard();
     Q_INVOKABLE void dismissEmptyCardForCurrentChart() { dismissEmptyCard(); }
@@ -302,6 +315,7 @@ signals:
     void returnedToOriginal();
     void emptyCardChanged();
     void streamingProgressChanged();
+    void guidePracticeChanged();
 
 private:
     void loadPreferences();
@@ -478,6 +492,19 @@ private:
     QTimer streamFlushTimer_;
     QElapsedTimer lastStreamFlush_, diskFlush_;
     QString pendingStreamChart_;
+
+    // ---- Interactive Guide Practice State (silent, local, daemon-free) ----
+    bool guidePracticeActive_ = false;
+    int guideStage_ = 0;
+    int guideCandidate_ = 0;
+    int guideStreamBeat_ = 0;
+    int guideAcceptedBeats_ = 0;
+    int guideInsertPos_ = 0;
+    QString guidePrefixLead_;
+    QTimer guideStreamTimer_;
+    QString guideCandidateText() const;
+    void showGuideCandidate();
+    bool handleGuideKey(int key);
 };
 
 } // namespace miacode::ui

@@ -17,6 +17,7 @@ AppDialog {
     property bool noaCopilotAdvancedExpanded: false
     property bool guideMode: false
     property bool savedNoaAdvancedExpanded: false
+    property string activeNoaGuideStep: ""
     readonly property Item noaTemperatureGuideItem: noaTemperatureSlider
     readonly property Item noaEnvironmentGuideItem: noaEnvironmentConfigBlock
 
@@ -31,6 +32,23 @@ AppDialog {
     closePolicy: guideMode ? Popup.NoAutoClose : Popup.CloseOnEscape
     z: guideMode ? 99 : 0
 
+    Timer {
+        id: noaGuideLayoutTimer
+        interval: 45
+        repeat: false
+        onTriggered: root.applyNoaGuideScroll()
+    }
+
+    function applyNoaGuideScroll() {
+        if (!root.guideMode || !root.visible || root.activeNoaGuideStep.length === 0)
+            return
+        const targetItem = root.activeNoaGuideStep === "noa-prefs-environment"
+            ? noaEnvironmentConfigBlock
+            : noaTemperatureSlider
+        const alignTop = (root.activeNoaGuideStep !== "noa-prefs-environment")
+        root.scrollNoaGuideTarget(targetItem, alignTop)
+    }
+
     function scrollNoaGuideTarget(item, alignTop) {
         const flickable = noaCopilotPage.contentItem as Flickable
         if (!flickable || !item) {
@@ -44,7 +62,7 @@ AppDialog {
         let target = minimum
         if (!alignTop) {
             const pos = item.mapToItem(flickable.contentItem, 0, 0)
-            target = Math.max(minimum, pos.y - 12)
+            target = Math.max(minimum, pos.y - 16)
         }
         flickable.contentY = Math.max(minimum, Math.min(target, maximum))
         root.noaGuideLayoutUpdated()
@@ -55,26 +73,18 @@ AppDialog {
             root.savedNoaAdvancedExpanded = root.noaCopilotAdvancedExpanded
             root.guideMode = true
         }
+        root.activeNoaGuideStep = stepId
         root.currentPageIndex = root.pageIds.indexOf("noa_copilot")
         root.noaCopilotAdvancedExpanded = (stepId === "noa-prefs-environment")
         if (!root.visible)
             root.open()
-        const targetItem = stepId === "noa-prefs-environment"
-            ? noaEnvironmentConfigBlock
-            : noaTemperatureSlider
-        const alignTop = (stepId !== "noa-prefs-environment")
-        Qt.callLater(() => {
-            if (!root.guideMode || !root.visible)
-                return
-            root.scrollNoaGuideTarget(targetItem, alignTop)
-            Qt.callLater(() => {
-                if (root.guideMode && root.visible)
-                    root.scrollNoaGuideTarget(targetItem, alignTop)
-            })
-        })
+        Qt.callLater(root.applyNoaGuideScroll)
+        noaGuideLayoutTimer.restart()
     }
 
     function closeNoaGuide() {
+        noaGuideLayoutTimer.stop()
+        root.activeNoaGuideStep = ""
         if (!root.guideMode)
             return
         root.close()

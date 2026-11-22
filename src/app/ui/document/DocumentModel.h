@@ -83,6 +83,7 @@ class DocumentModel final : public QObject
                    WRITE setWholeSourceEditorActive NOTIFY wholeSourceEditorActiveChanged)
     Q_PROPERTY(QStringList dirtyEditorKeys READ dirtyEditorKeys NOTIFY dirtyEditorKeysChanged)
     Q_PROPERTY(qulonglong bookmarkGeneration READ bookmarkGeneration NOTIFY bookmarksChanged)
+    Q_PROPERTY(bool guidePracticeDocumentActive READ guidePracticeDocumentActive NOTIFY guidePracticeDocumentActiveChanged)
 
 public:
     explicit DocumentModel(
@@ -182,6 +183,9 @@ public:
     Q_INVOKABLE QVariantMap fileDialogLocation(bool saveMode) const;
     Q_INVOKABLE QStringList openFileNameFilters() const;
     Q_INVOKABLE bool openFile(const QUrl& fileUrl);
+    Q_INVOKABLE bool beginGuidePracticeDocument();
+    Q_INVOKABLE void endGuidePracticeDocument();
+    bool guidePracticeDocumentActive() const { return guidePracticeDocumentActive_; }
     QJsonObject documentIdentity() const;
     net::NetEnginePort::Cancel openNetPreview(const QString& path, const QJsonObject& expected,
                                              net::NetEnginePort::Done done);
@@ -268,6 +272,7 @@ signals:
     void documentStateChanged();
     void documentReplaced();
     void bookmarksChanged();
+    void guidePracticeDocumentActiveChanged();
 
 private:
     bool openFileWithOrigin(const QUrl& fileUrl, ChartDocumentOrigin origin);
@@ -370,5 +375,17 @@ private:
     void saveSectionOrAskForPath(int difficultyId, std::function<void(bool)> onSaved);
     void requestLeaveSection(int difficultyId, std::function<void(bool)> onDecided);
     bool closeDecisionPending_ = false;
+    struct GuideSavedDocumentState {
+        bool hadDocument = false;
+        QString filePath;
+        QString sourceText;
+        int activeDifficultyId = 0;
+        bool dirty = false;
+        ChartDocumentOrigin origin = ChartDocumentOrigin::Local;
+        bool unifiedDesigner = false;
+    };
+    bool guidePracticeDocumentActive_ = false;
+    QString guidePracticeTempPath_;
+    GuideSavedDocumentState guideSavedState_;
 };
 } // namespace miacode::ui

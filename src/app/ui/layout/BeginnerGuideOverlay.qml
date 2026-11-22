@@ -15,24 +15,37 @@ Popup {
     property int layoutRevision: 0
     property bool openingRange: false
     property string interactiveActiveKey: ""
+    property string interactivePrompt: ""
+    property int interactiveCompletedSteps: 0
+    property int interactiveCurrentStepIndex: -1
+    property var interactiveStepSequence: []
+    property real dragOffsetX: 0
+    property real dragOffsetY: 0
     readonly property var selectedSection: sections[selectedIndex]
-    readonly property rect spotlight: regionRect(selectedSection)
-    readonly property bool usingFallback: !itemAvailable(selectedSection.target)
+    readonly property bool interactiveWorkspace: !!(selectedSection && selectedSection.interactiveWorkspace)
+    readonly property rect spotlight: interactiveWorkspace ? Qt.rect(0, 0, 0, 0) : regionRect(selectedSection)
+    readonly property bool usingFallback: !interactiveWorkspace && !itemAvailable(selectedSection.target)
     readonly property bool lastStep: selectedIndex === sections.length - 1
     readonly property int visibleStepNumber: selectedIndex - startIndex + 1
     readonly property int visibleStepCount: Math.max(1, sections.length - startIndex)
     readonly property int iconSize: Theme.compactControlHeight
+    readonly property real cardDesiredWidth: Math.min(
+        selectedSection && selectedSection.cardWidth ? selectedSection.cardWidth : 320,
+        Math.max(240, (parent ? parent.width : 800) - 2 * Theme.dialogMargin))
+    readonly property rect floatingCardRect: computeFloatingRect(cardDesiredWidth, card.desiredHeight)
 
     parent: Overlay.overlay
     popupType: Popup.Item
-    width: parent.width
-    height: parent.height
+    x: interactiveWorkspace ? floatingCardRect.x : 0
+    y: interactiveWorkspace ? floatingCardRect.y : 0
+    width: interactiveWorkspace ? floatingCardRect.width : (parent ? parent.width : 0)
+    height: interactiveWorkspace ? floatingCardRect.height : (parent ? parent.height : 0)
     padding: 0
     margins: 0
-    modal: true
+    modal: !interactiveWorkspace
     dim: false
-    focus: true
-    closePolicy: Popup.CloseOnEscape
+    focus: !interactiveWorkspace
+    closePolicy: interactiveWorkspace ? Popup.NoAutoClose : Popup.CloseOnEscape
     z: 100
     background: Item {}
     onAboutToShow: {
@@ -41,16 +54,44 @@ Popup {
             selectedIndex = 0
         }
         openingRange = false
+        dragOffsetX = 0
+        dragOffsetY = 0
     }
     onOpened: {
-        nextButton.forceActiveFocus()
+        if (!interactiveWorkspace)
+            nextButton.forceActiveFocus()
         bumpLayout()
     }
     onSelectedIndexChanged: {
         viewport.contentItem.contentY = 0
-        if (visible)
+        dragOffsetX = 0
+        dragOffsetY = 0
+        if (visible && !interactiveWorkspace)
             nextButton.forceActiveFocus()
         bumpLayout()
+    }
+
+    function computeFloatingRect(cardWidth, desiredHeight) {
+        const hostW = parent ? parent.width : 800
+        const hostH = parent ? parent.height : 600
+        const margin = Theme.dialogMargin
+        const w = Math.min(cardWidth, Math.max(240, hostW - 2 * margin))
+        const h = Math.min(Math.max(160, desiredHeight), Math.max(160, hostH - 2 * margin))
+        let baseX = margin
+        let baseY = hostH - margin - h
+        const rev = root.layoutRevision
+        const anchorItem = selectedSection ? selectedSection.target : null
+        if (rev >= 0 && anchorItem && itemAvailable(anchorItem) && parent) {
+            const origin = anchorItem.mapToItem(parent, 0, 0)
+            baseX = origin.x + Theme.dialogPadding
+            baseY = origin.y + anchorItem.height - h - Theme.dialogPadding
+        }
+        return Qt.rect(
+            bounded(baseX + dragOffsetX, margin, Math.max(margin, hostW - margin - w)),
+            bounded(baseY + dragOffsetY, margin, Math.max(margin, hostH - margin - h)),
+            w,
+            h
+        )
     }
 
     function openFromId(sectionId) {
@@ -89,10 +130,17 @@ Popup {
     }
 
     function itemAvailable(item) {
-        if (!item || item.Window.window !== root.parent.Window.window)
+        const rev = root.layoutRevision
+        if (rev < 0 || !item || !root.parent || item.Window.window !== root.parent.Window.window)
             return false
-        for (let node = item; node; node = node.parent) {
-            if (!node.visible || node.width <= 0 || node.height <= 0)
+        if (!item.visible || item.width <= 0 || item.height <= 0)
+            return false
+        for (let node = item.parent; node; node = node.parent) {
+            if (!node.visible)
+                return false
+            // Qt Quick Flickable.contentItem reports 0x0 even while its viewport and children are visible.
+            const isFlickableContent = node.parent && node.parent.contentItem === node
+            if (!isFlickableContent && (node.width <= 0 || node.height <= 0))
                 return false
         }
         return true
@@ -209,17 +257,20 @@ Popup {
         Keys.onPressed: event => root.dispatchSectionKey(event)
 
         Rectangle {
+            visible: !root.interactiveWorkspace
             width: parent.width
             height: root.spotlight.y
             color: Theme.modalScrimColor
         }
         Rectangle {
+            visible: !root.interactiveWorkspace
             y: root.spotlight.y
             width: root.spotlight.x
             height: root.spotlight.height
             color: Theme.modalScrimColor
         }
         Rectangle {
+            visible: !root.interactiveWorkspace
             x: root.spotlight.x + root.spotlight.width
             y: root.spotlight.y
             width: parent.width - x
@@ -227,6 +278,7 @@ Popup {
             color: Theme.modalScrimColor
         }
         Rectangle {
+            visible: !root.interactiveWorkspace
             y: root.spotlight.y + root.spotlight.height
             width: parent.width
             height: parent.height - y
@@ -235,6 +287,7 @@ Popup {
 
         MouseArea {
             anchors.fill: parent
+            visible: !root.interactiveWorkspace
             acceptedButtons: Qt.AllButtons
             onWheel: wheel => wheel.accepted = true
         }
@@ -244,7 +297,7 @@ Popup {
             y: root.spotlight.y
             width: root.spotlight.width
             height: root.spotlight.height
-            visible: width > 0 && height > 0
+            visible: !root.interactiveWorkspace && width > 0 && height > 0
             color: "transparent"
             radius: Theme.controlRadius
             border.width: 2
@@ -257,13 +310,13 @@ Popup {
             readonly property real desiredHeight: header.implicitHeight
                 + bodyColumn.implicitHeight + footer.implicitHeight
                 + 2 * padding + 2 * Theme.dialogPadding
-            readonly property var placement: root.placeCard(width, desiredHeight)
-            width: Math.min(root.selectedSection && root.selectedSection.cardWidth
-                ? root.selectedSection.cardWidth : 320,
-                surface.width - 2 * Theme.dialogMargin)
-            height: placement.height
-            x: placement.x
-            y: placement.y
+            readonly property var placement: root.interactiveWorkspace
+                ? ({ x: 0, y: 0, height: surface.height, side: "below" })
+                : root.placeCard(root.cardDesiredWidth, desiredHeight)
+            width: root.interactiveWorkspace ? surface.width : root.cardDesiredWidth
+            height: root.interactiveWorkspace ? surface.height : placement.height
+            x: root.interactiveWorkspace ? 0 : placement.x
+            y: root.interactiveWorkspace ? 0 : placement.y
 
             // 指示角位于卡片边缘，序号放在卡片内，控件图标保持可见。
             Rectangle {
@@ -283,7 +336,7 @@ Popup {
                 color: Theme.colors.background.elevated
                 border.color: Theme.floatingBorderColor
                 border.width: 1
-                visible: root.spotlight.width > 0 && root.spotlight.height > 0
+                visible: !root.interactiveWorkspace && root.spotlight.width > 0 && root.spotlight.height > 0
             }
 
             FloatingCard {
@@ -327,6 +380,21 @@ Popup {
                             font.pixelSize: Theme.headingFontSize
                             font.weight: Font.DemiBold
                             wrapMode: Text.Wrap
+                            MouseArea {
+                                anchors.fill: parent
+                                visible: root.interactiveWorkspace
+                                cursorShape: Qt.SizeAllCursor
+                                property point pressPos: Qt.point(0, 0)
+                                onPressed: mouse => {
+                                    pressPos = Qt.point(mouse.x, mouse.y)
+                                }
+                                onPositionChanged: mouse => {
+                                    if (!pressed)
+                                        return
+                                    root.dragOffsetX += mouse.x - pressPos.x
+                                    root.dragOffsetY += mouse.y - pressPos.y
+                                }
+                            }
                         }
                         IconButton {
                             iconSource: Qt.resolvedUrl("icons/close.svg")
@@ -354,6 +422,74 @@ Popup {
                         id: bodyColumn
                         width: viewport.availableWidth
                         spacing: Theme.panelPadding
+                        Column {
+                            width: parent.width
+                            spacing: 6
+                            visible: root.interactiveWorkspace && root.interactiveStepSequence.length > 0
+
+                            Row {
+                                width: parent.width
+                                spacing: 4
+                                Repeater {
+                                    model: root.interactiveStepSequence
+                                    delegate: Row {
+                                        id: stepPill
+                                        required property string modelData
+                                        required property int index
+                                        readonly property bool done: index < root.interactiveCompletedSteps
+                                        readonly property bool current: index === root.interactiveCurrentStepIndex
+                                        spacing: 4
+
+                                        Rectangle {
+                                            radius: Theme.smallControlRadius
+                                            width: Math.max(26, pillText.implicitWidth + 10)
+                                            height: 20
+                                            color: stepPill.current
+                                                ? Theme.colors.accent.primary
+                                                : (stepPill.done
+                                                    ? Theme.contentOverlayColor(Theme.colors.accent.primary, 0.16)
+                                                    : Theme.colors.background.control)
+                                            border.width: 1
+                                            border.color: stepPill.current || stepPill.done
+                                                ? Theme.colors.accent.primary
+                                                : Theme.colors.border.normal
+
+                                            Text {
+                                                id: pillText
+                                                anchors.centerIn: parent
+                                                text: stepPill.modelData
+                                                color: stepPill.current
+                                                    ? Theme.colors.text.onAccent
+                                                    : (stepPill.done ? Theme.colors.accent.primary : Theme.colors.text.secondary)
+                                                font.family: Theme.codeFont.family
+                                                font.pixelSize: Theme.captionFontSize
+                                                font.weight: Font.DemiBold
+                                            }
+                                        }
+
+                                        Text {
+                                            visible: stepPill.index < root.interactiveStepSequence.length - 1
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: "›"
+                                            color: Theme.colors.text.disabled
+                                            font.family: Theme.uiFont
+                                            font.pixelSize: Theme.captionFontSize
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                width: parent.width
+                                text: root.interactivePrompt
+                                color: root.interactiveCompletedSteps >= root.interactiveStepSequence.length
+                                    ? "#4CC38A"
+                                    : Theme.colors.text.primary
+                                font.family: Theme.uiFont
+                                font.pixelSize: Theme.secondaryFontSize
+                                wrapMode: Text.Wrap
+                            }
+                        }
                         Flow {
                             width: parent.width
                             spacing: Theme.panelPadding

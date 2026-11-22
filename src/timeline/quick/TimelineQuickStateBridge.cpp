@@ -264,8 +264,14 @@ void TimelineQuickStateBridge::setCandidateSnapshots(const TimelineRenderSnapsho
     candidateNormal_ = normal;
     ghostSnapshot_ = ghost;
     hasCandidate_ = true;
-    bumpNotesRevision();
-    ++ghostNotesRevision_;
+    const double prevDuration = durationSeconds();
+    refreshLayoutMetrics();
+    if (!qFuzzyCompare(prevDuration + 1.0, durationSeconds() + 1.0)) {
+        bumpAllRevisions();
+    } else {
+        bumpNotesRevision();
+        ++ghostNotesRevision_;
+    }
     emit renderStateChanged();
 }
 
@@ -287,8 +293,14 @@ void TimelineQuickStateBridge::clearCandidateSnapshots(bool accepted)
     hasCandidate_ = false;
     candidateNormal_ = {};
     ghostSnapshot_ = {};
-    bumpNotesRevision();
-    ++ghostNotesRevision_;
+    const double prevDuration = durationSeconds();
+    refreshLayoutMetrics();
+    if (!qFuzzyCompare(prevDuration + 1.0, durationSeconds() + 1.0)) {
+        bumpAllRevisions();
+    } else {
+        bumpNotesRevision();
+        ++ghostNotesRevision_;
+    }
     emit renderStateChanged();
 }
 
@@ -437,7 +449,7 @@ QSize TimelineQuickStateBridge::effectiveViewportSize() const
 void TimelineQuickStateBridge::refreshLayoutMetrics()
 {
     miacode::timeline::TimelineSceneBuildRequest request;
-    request.snapshot = snapshot_;
+    request.snapshot = renderSnapshot();
     request.waveformData = waveformData_;
     request.viewportSize = effectiveViewportSize();
     request.skinDirectory = skinDirectory_;
@@ -447,7 +459,9 @@ void TimelineQuickStateBridge::refreshLayoutMetrics()
     request.waveformBrightness = waveformBrightness_;
     request.measureLineBrightness = measureLineBrightness_;
     request.waveformPhaseCompensationSeconds = waveformPhaseCompensationSeconds_;
-    request.playheadUpperLimitSeconds = playheadUpperLimitSeconds_;
+    request.playheadUpperLimitSeconds = hasCandidate_
+        ? qMax(playheadUpperLimitSeconds_, qMax(candidateNormal_.durationSeconds, ghostSnapshot_.durationSeconds))
+        : playheadUpperLimitSeconds_;
     layoutMetrics_ = miacode::timeline::TimelineSceneStateBuilder::layoutMetrics(request);
     layoutMetricsValid_ = true;
     horizontalScrollValue_ =
