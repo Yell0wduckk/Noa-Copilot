@@ -404,6 +404,7 @@ private:
     QString precision_ = QStringLiteral("bf16");
     double temperature_ = 0.5;
     double slideBias_ = 0.0;
+    double continuationSecond_ = 0.0, continuationEndSecond_ = 0.0;
     int seed_ = -1;
     QString checkpointPath_;
     QString checkpointDir_;

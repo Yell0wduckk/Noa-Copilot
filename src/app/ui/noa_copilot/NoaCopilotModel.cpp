@@ -1228,6 +1228,10 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("temperature"), temperature_);
     req.insert(QStringLiteral("slide_bias"), slideBias_);
     req.insert(QStringLiteral("seed"), seed_);
+    if (mode == "continue") {
+        if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge()))
+            continuationSecond_ = bridge->cursorSeconds();
+    }
     request_ = req;
     prefetchThrough_ = mode == "full" ? 1 : candidateCount_;
     emit ghostStateChanged();
@@ -1425,6 +1429,7 @@ void NoaCopilotModel::beginCandidate(int number, const QJsonObject& layout)
     c.writer.begin(layout, document_.chartText(), request_["line_align_beats"].toInt(4));
     c.left = c.cut = layout["left"].toInt();
     c.right = c.origEnd = layout["right"].toInt();
+    continuationEndSecond_ = layout["end_second"].toDouble();
     c.startSecond = layout["start_second"].toDouble();
     c.activeBpm = c.writer.bpm(layout["start"].toInt());
     candidates_.insert(number, std::move(c));
@@ -1433,6 +1438,9 @@ void NoaCopilotModel::beginCandidate(int number, const QJsonObject& layout)
 void NoaCopilotModel::switchCandidate(int direction)
 {
     if (!candidateSessionActive()) return;
+    const auto candidate = candidates_.constFind(selected_);
+    const double anchor = candidate == candidates_.cend() ? continuationSecond_ : candidate->startSecond;
+    const auto seekAfterSwitch = qScopeGuard([this, anchor] { preview_.setPositionSeconds(anchor); });
     int next = selected_ + direction;
     if (direction < 0) {
         while (next > 0 && !candidates_.contains(next)) --next;
@@ -1672,6 +1680,8 @@ void NoaCopilotModel::handleDaemonMessage(const QJsonObject& message)
         if (hadSession != candidateSessionActive()) emit ghostStateChanged();
     });
     const QString event = message.value(QStringLiteral("event")).toString();
+    if ((event == "result" || event == "stream_chunk") && message["id"].toInt() == activeRequestId_
+        && message.contains("end_second")) continuationEndSecond_ = message["end_second"].toDouble();
     if (event == QStringLiteral("configured")) {
         daemonConfigured_ = message.value(QStringLiteral("ok")).toBool();
         checkpointLoadedInDaemon_ = message.value(QStringLiteral("checkpoint_loaded")).toBool();
@@ -1962,6 +1972,7 @@ void NoaCopilotModel::applyDualSurfaceGhostPreview(
     int strikeStartUtf16,
     int strikeEndUtf16)
 {
+    continuationSecond_ = startSecond;
     const bool hasStrike = strikeEndUtf16 > strikeStartUtf16;
     if (ghostSimai.trimmed().isEmpty() && !hasStrike) {
         clearDualSurfaceGhostPreview();
@@ -2201,10 +2212,16 @@ bool NoaCopilotModel::acceptNextGhostStep()
     if (!ghostActive_ || ghostStreaming_ || ghostText_.isEmpty()) {
         return false;
     }
+    auto acceptToEnd = [this] {
+        const double end = continuationEndSecond_;
+        if (!acceptFullGhost()) return false;
+        preview_.setPositionSeconds(end);
+        return true;
+    };
     if (!candidates_.isEmpty() && selected_ && candidates_[selected_].ready) {
         const auto& writer = candidates_[selected_].writer;
         const auto step = writer.step(ghostCurrentStep_);
-        if (step.isEmpty()) return acceptFullGhost();
+        if (step.isEmpty()) return acceptToEnd();
         ghostSteps_ = QJsonArray{step,QJsonObject()};
         ghostCurrentStep_ = 0;
         stepRequest_ = request_;
@@ -2213,7 +2230,7 @@ bool NoaCopilotModel::acceptNextGhostStep()
         stepRequest_["division"] = step["division"];
     }
     if (ghostSteps_.isEmpty() || ghostCurrentStep_ >= ghostSteps_.size()) {
-        return acceptFullGhost();
+        return acceptToEnd();
     }
 
     const QJsonObject stepObj = ghostSteps_.at(ghostCurrentStep_).toObject();
@@ -2226,7 +2243,7 @@ bool NoaCopilotModel::acceptNextGhostStep()
     const double remBpm = stepObj.value(QStringLiteral("remaining_bpm")).toDouble(currentChartBpm());
 
     if (stepText.isEmpty()) {
-        return acceptFullGhost();
+        return acceptToEnd();
     }
 
     const int insertStart = ghostReplaceStart_;
@@ -2248,6 +2265,8 @@ bool NoaCopilotModel::acceptNextGhostStep()
         return false;
     }
 
+    const auto seekAfterStep = qScopeGuard([this, remStartSec] { preview_.setPositionSeconds(remStartSec); });
+    continuationSecond_ = remStartSec;
     if (!hasMoreSteps) {
         dismissGhost();
         return true;
