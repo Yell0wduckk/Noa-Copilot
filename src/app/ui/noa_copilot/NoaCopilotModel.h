@@ -313,7 +313,7 @@ signals:
     void designerOptionsChanged();
     void cacheInfoChanged();
     void ghostStateChanged();
-    void returnedToOriginal();
+    void editorFocusRequested();
     void emptyCardChanged();
     void streamingProgressChanged();
     void guidePracticeChanged();

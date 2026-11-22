@@ -1484,7 +1484,6 @@ void NoaCopilotModel::switchCandidate(int direction)
         while (next > 0 && !candidates_.contains(next)) --next;
         if (next <= 0) {
             dismissAllActivePreviews();
-            emit returnedToOriginal();
             return;
         }
     } else {
@@ -2171,15 +2170,19 @@ bool NoaCopilotModel::candidateSessionActive() const
 
 bool NoaCopilotModel::handleCandidateKey(int key)
 {
-    if (guidePracticeActive_) return handleGuideKey(key);
     if (!candidateSessionActive()) return false;
-    if (key == Qt::Key_Up || key == Qt::Key_Down) {
+    if (key != Qt::Key_Up && key != Qt::Key_Down && key != Qt::Key_Tab) return false;
+
+    if (guidePracticeActive_) {
+        if (!handleGuideKey(key)) return false;
+    } else if (key != Qt::Key_Tab) {
         switchCandidate(key == Qt::Key_Up ? -1 : 1);
-        return true;
+    } else if (!ghostActive_ || ghostStreaming_) {
+        pendingAcceptAfterStream_ = true;
+    } else {
+        acceptFullGhost();
     }
-    if (key != Qt::Key_Tab) return false;
-    if (!ghostActive_ || ghostStreaming_) pendingAcceptAfterStream_ = true;
-    else acceptFullGhost();
+    emit editorFocusRequested();
     return true;
 }
 

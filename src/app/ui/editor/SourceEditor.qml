@@ -703,7 +703,7 @@ Rectangle {
     }
     Connections {
         target: root.noaCopilot
-        function onReturnedToOriginal() {
+        function onEditorFocusRequested() {
             const editorWindow = root.Window.window
             if (editorWindow && !editorWindow.active && Qt.application.state === Qt.ApplicationActive)
                 editorWindow.requestActivate()
