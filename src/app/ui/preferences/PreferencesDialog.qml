@@ -1208,6 +1208,94 @@ AppDialog {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            Text {
+                                Layout.preferredWidth: root.settingsLabelWidth
+                                text: "MERT2 音频模型"
+                                color: Theme.colors.text.secondary
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                wrapMode: Text.Wrap
+                                text: root.noaCopilot?.mertInstallStatus ||
+                                      (root.noaCopilot?.mertInstalled ? "已安装" : "首次下载约 2.53 GB，自动保留前 8 层")
+                                color: Theme.colors.text.secondary
+                            }
+                            AppButton {
+                                text: "CC BY-NC 4.0（非商业）"
+                                onClicked: Qt.openUrlExternally("https://creativecommons.org/licenses/by-nc/4.0/")
+                            }
+                            AppButton {
+                                visible: !root.noaCopilot?.mertInstalled
+                                enabled: !!root.noaCopilot && !root.noaCopilot.mertInstalling
+                                text: root.noaCopilot?.mertInstalling ? "正在安装…" : "下载 MERT2"
+                                onClicked: root.noaCopilot.downloadMert()
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: !!root.noaCopilot?.environmentDownloadSupported
+                            Text {
+                                Layout.preferredWidth: root.settingsLabelWidth
+                                text: "PyTorch 运行环境"
+                                color: Theme.colors.text.secondary
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WrapAnywhere
+                                text: root.noaCopilot?.environmentInstallStatus || "CUDA 版也支持 CPU 推理，PyTorch 主包约 2.6 GB"
+                                color: Theme.colors.text.secondary
+                            }
+                            AppButton {
+                                enabled: !root.noaCopilot?.environmentInstalling
+                                text: "安装 CPU 版"
+                                onClicked: root.noaCopilot.downloadEnvironment(false)
+                            }
+                            AppButton {
+                                enabled: !root.noaCopilot?.environmentInstalling
+                                text: "安装 CUDA 版"
+                                onClicked: root.noaCopilot.downloadEnvironment(true)
+                            }
+                        }
+
+                        RowLayout {
+                            visible: !!root.noaCopilot?.environmentDownloadSupported
+                            Layout.fillWidth: true
+                            spacing: Theme.settingsRowSpacing
+                            Text {
+                                Layout.preferredWidth: root.settingsLabelWidth
+                                text: "运行环境下载源"
+                                color: Theme.colors.text.secondary
+                            }
+                            AppComboBox {
+                                Layout.preferredWidth: 120
+                                enabled: !!root.noaCopilot && !root.noaCopilot.environmentInstalling
+                                textRole: "label"
+                                model: [{label: "清华 TUNA", value: "tuna"}, {label: "中国科大", value: "ustc"},
+                                        {label: "阿里云", value: "aliyun"}, {label: "仅官方源", value: "official"}]
+                                currentIndex: Math.max(0, model.findIndex(item => item.value === root.noaCopilot?.environmentSource))
+                                onActivated: index => root.noaCopilot.environmentSource = model[index].value
+                            }
+                            Text {
+                                id: sourceHint
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: 0
+                                wrapMode: Text.NoWrap
+                                color: Theme.colors.text.secondary
+                                readonly property bool official: root.noaCopilot?.environmentSource === "official"
+                                text: width >= sourceHintMetrics.advanceWidth ? sourceHintMetrics.text
+                                     : (official ? "仅使用官方源" : "失败时自动换源")
+                                TextMetrics {
+                                    id: sourceHintMetrics
+                                    font: sourceHint.font
+                                    text: sourceHint.official ? "pip 和 PyTorch 都从官方源下载"
+                                                          : "pip 用所选源，PyTorch 用国内镜像，失败时自动换源"
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
                             spacing: Theme.settingsRowSpacing * 2
                             NoaCountField { label: "续写行数"; unit: "行"; setting: "continuationLines"; defaultValue: 4 }
                             NoaCountField { label: "每行拍数"; unit: "拍"; setting: "lineAlignBeats"; defaultValue: 4 }
@@ -1316,7 +1404,7 @@ AppDialog {
                                         AppTextField { Layout.fillWidth: true; text: root.noaCopilot?.wslDistribution ?? ""; onEditingFinished: root.noaCopilot.wslDistribution=text }
                                         AppButton { text: "扫描本机环境"; onClicked: root.noaCopilot.scanEnvironments() }
                                     }
-                                    Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: root.noaCopilot?.environmentStatus ?? ""; visible: text.length > 0; color: Theme.colors.text.secondary }
+                                    Text { Layout.fillWidth: true; textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere; text: root.noaCopilot?.environmentStatus ?? ""; visible: text.length > 0; color: Theme.colors.text.secondary }
                                 }
                                 PreferenceCombo {
                                     label: "推理精度"

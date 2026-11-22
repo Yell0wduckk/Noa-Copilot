@@ -21,8 +21,10 @@ QString run(const QString& program, const QStringList& args, int seconds = 20)
     child.setProcessChannelMode(QProcess::MergedChannels);
     child.start(program, args);
     if (!child.waitForFinished(seconds * 1000)) {
+        const QString failure = child.errorString();
         child.kill();
         child.waitForFinished();
+        return failure;
     }
     return QString::fromUtf8(child.readAll()).trimmed();
 }
@@ -99,6 +101,9 @@ QVariantList probeNoaEnvironments(const QString& cpu, const QString& cuda, const
     std::vector<QFuture<QVariantMap>> probes;
     QStringList ordered = paths.values();
     ordered.sort(Qt::CaseInsensitive);
+    QFile script(":/noa/probe-noa-environment.py");
+    script.open(QIODevice::ReadOnly);
+    const QString probe = QString::fromUtf8(script.readAll());
     for (const QString& path : ordered) {
 #ifdef Q_OS_WIN
         bool isWsl = path.startsWith('/');
@@ -130,32 +135,26 @@ QVariantList probeNoaEnvironments(const QString& cpu, const QString& cuda, const
             } else if (path != QDir::fromNativeSeparators(cpu) && path != QDir::fromNativeSeparators(cuda))
                 continue;
         }
-        const QString probe = QStringLiteral(
-            "import json,torch,numpy,soundfile,scipy\n"
-            "g=bool(%1 and torch.cuda.is_available())\n"
-            "try:\n"
-            " import transformers\n"
-            " from torchaudio.transforms import AmplitudeToDB,MelScale,Spectrogram\n"
-            " mert=True; reason=''\n"
-            "except Exception as e:\n"
-            " mert=False; reason=str(e)\n"
-            "print(json.dumps(dict(ok=True,version=str(torch.__version__),cuda=g,mert=mert,"
-            "mert_reason=reason,gpu=torch.cuda.get_device_name(0) if g else '')))")
-            .arg(driver && cudaBuild ? "True" : "False");
-        probes.push_back(QtConcurrent::run(&pool, [path, probe, isWsl, wsl, driver] {
-            const QString result = isWsl ? run("wsl.exe", wsl + QStringList { "--exec", path, "-c", probe })
-                                         : run(path, { "-c", probe });
-            const auto obj = QJsonDocument::fromJson(result.section('\n', -1).toUtf8()).object();
-            return QVariantMap { { "path", path }, { "cpu", obj["ok"].toBool() },
-                { "cuda", obj["cuda"].toBool() }, { "mert", obj["mert"].toBool() },
-                { "mertReason", obj["mert_reason"].toString() },
-                { "label",
-                    obj["ok"].toBool() ? path + " · " + obj["version"].toString() + " " + obj["gpu"].toString()
-                                       : path },
-                { "reason",
-                    obj["ok"].toBool()
-                        ? (driver ? QStringLiteral("此环境没有可用的 CUDA") : QStringLiteral("未检测到 NVIDIA 驱动"))
-                        : result.section('\n', -1).left(220) } };
+        probes.push_back(QtConcurrent::run(&pool, [path, probe, isWsl, wsl, driver, cudaBuild] {
+            QStringList args {"-X", "utf8", "-c", probe};
+            if (driver && cudaBuild) args << "cuda";
+            const QString result = isWsl ? run("wsl.exe", wsl + QStringList {"--exec", path} + args, 90)
+                                         : run(path, args, 90);
+            const auto obj = QJsonDocument::fromJson(result.section('\n', -1).toUtf8()).object().toVariantMap();
+            QStringList issues = obj.value("chart").toStringList();
+            if (!obj.contains("chart"))
+                issues << (result.isEmpty() ? QStringLiteral("Python 未返回检测结果") : result);
+            const bool cpuOk = issues.isEmpty();
+            const QStringList audio = obj.value("audio").toStringList();
+            for (const QString& item : audio)
+                if (!issues.contains(item)) issues << item;
+            const QString gpu = obj.value("gpu").toString();
+            QString cudaReason = obj.value("cuda_error").toString();
+            if (cudaReason.isEmpty() && gpu.isEmpty() && cpuOk)
+                cudaReason = driver ? QStringLiteral("此环境没有可用的 CUDA") : QStringLiteral("未检测到 NVIDIA 驱动");
+            return QVariantMap {{"path", path}, {"cpu", cpuOk}, {"cuda", cpuOk && !gpu.isEmpty()},
+                {"mert", audio.isEmpty() && cpuOk}, {"reason", issues.join('\n')}, {"cudaReason", cudaReason},
+                {"label", cpuOk ? path + " · " + obj.value("version").toString() + " " + gpu : path}};
         }));
     }
     QVariantList rows;

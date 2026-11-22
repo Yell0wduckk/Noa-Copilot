@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/ui/noa_copilot/NoaMaterializer.h"
+#include "app/ui/noa_copilot/NoaEnvironmentInstaller.h"
 #include "core/chart/model/TimelineData.h"
 #include "timeline/TimelineRenderData.h"
 #include <QByteArray>
@@ -78,6 +79,13 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(int candidateLocalIssues READ candidateLocalIssues NOTIFY ghostStateChanged)
     Q_PROPERTY(QString transientHint READ transientHint NOTIFY ghostStateChanged)
     Q_PROPERTY(QString environmentStatus READ environmentStatus NOTIFY configChanged)
+    Q_PROPERTY(bool environmentDownloadSupported READ environmentDownloadSupported CONSTANT)
+    Q_PROPERTY(QString environmentSource READ environmentSource WRITE setEnvironmentSource NOTIFY configChanged)
+    Q_PROPERTY(bool environmentInstalling READ environmentInstalling NOTIFY environmentInstallChanged)
+    Q_PROPERTY(QString environmentInstallStatus READ environmentInstallStatus NOTIFY environmentInstallChanged)
+    Q_PROPERTY(bool mertInstalled READ mertInstalled NOTIFY mertInstallChanged)
+    Q_PROPERTY(bool mertInstalling READ mertInstalling NOTIFY mertInstallChanged)
+    Q_PROPERTY(QString mertInstallStatus READ mertInstallStatus NOTIFY mertInstallChanged)
     Q_PROPERTY(bool cpuMertAvailable READ cpuMertAvailable NOTIFY configChanged)
     Q_PROPERTY(bool cudaMertAvailable READ cudaMertAvailable NOTIFY configChanged)
     Q_PROPERTY(bool cpuAvailable READ cpuAvailable NOTIFY configChanged)
@@ -246,6 +254,16 @@ public:
     QString transientHint() const { return exhaustionTimer_.isActive() ? hintText_ : QString(); }
     Q_INVOKABLE bool seekCandidateAt(int visualPosition);
     QString environmentStatus() const { return environmentStatus_; }
+    bool environmentDownloadSupported() const;
+    QString environmentSource() const { return environmentSource_; }
+    void setEnvironmentSource(const QString& source);
+    bool environmentInstalling() const { return environmentInstaller_.busy(); }
+    QString environmentInstallStatus() const { return environmentInstaller_.message(); }
+    Q_INVOKABLE void downloadEnvironment(bool cuda);
+    bool mertInstalled() const;
+    bool mertInstalling() const { return mertInstaller_ != nullptr; }
+    QString mertInstallStatus() const { return mertInstallStatus_; }
+    Q_INVOKABLE void downloadMert();
     bool cpuMertAvailable() const { return cpuMertAvailable_; }
     bool cudaMertAvailable() const { return cudaMertAvailable_; }
     bool cpuAvailable() const { return cpuAvailable_; }
@@ -309,6 +327,8 @@ public:
 signals:
     void configChanged();
     void statusChanged();
+    void mertInstallChanged();
+    void environmentInstallChanged();
     void checkpointsChanged();
     void designerOptionsChanged();
     void cacheInfoChanged();
@@ -397,6 +417,10 @@ private:
     bool cpuAvailable_ = false, cudaAvailable_ = false;
     bool cpuMertAvailable_ = false, cudaMertAvailable_ = false;
     QString environmentStatus_;
+    NoaEnvironmentInstaller environmentInstaller_;
+    QString environmentSource_ = "tuna";
+    QProcess* mertInstaller_ = nullptr;
+    QString mertInstallStatus_;
     quint64 strikeRevision_ = 0, nextAnalysisId_ = 0;
     int strikeLeft_ = -1, strikeRight_ = -1;
     std::pair<int,int> strikeFrom_, strikeTo_;

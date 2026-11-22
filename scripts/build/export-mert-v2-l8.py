@@ -1,12 +1,20 @@
-"""Export the native Flat320 MERT-v2-FullSong frontend from a local HF snapshot."""
+"""Install the eight-layer MERT frontend from a local or official snapshot."""
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 
 from safetensors import safe_open
 from safetensors.numpy import save_file
+
+REPOSITORY = "m-a-p/MERT-v2-FullSong"
+REVISION = "7001f7657276238629e61c7746ce70735e0604c0"
+COMPANION_FILES = (
+    "configuration_mert2.py", "modeling_mert2.py", "preprocessor_config.json",
+    "LICENSE", "THIRD_PARTY_NOTICES.md",
+)
 
 
 def export(source, output):
@@ -23,10 +31,7 @@ def export(source, output):
     (output / "config.json").write_text(
         json.dumps(config, indent=2) + "\n", encoding="utf-8"
     )
-    for name in (
-        "configuration_mert2.py", "modeling_mert2.py", "preprocessor_config.json",
-        "LICENSE", "THIRD_PARTY_NOTICES.md",
-    ):
+    for name in COMPANION_FILES:
         shutil.copyfile(source / name, output / name)
     (output / "README.md").write_text(
         "# MERT-v2-FullSong L8\n\n"
@@ -38,9 +43,35 @@ def export(source, output):
     )
 
 
+def download_and_export(output):
+    from filelock import FileLock
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    work = output.parent / ".mert-v2-install"
+    # Keep interrupted transfers next to the portable model for the next attempt.
+    os.environ["HF_HOME"] = str(work / "hub-cache")
+    from huggingface_hub import hf_hub_download
+
+    with FileLock(output.parent / ".mert-v2-install.lock"):
+        source, trimmed = work / "source", work / "trimmed"
+        for name in ("config.json", *COMPANION_FILES, "model.safetensors"):
+            print(f"正在下载 {name}", flush=True)
+            hf_hub_download(REPOSITORY, name, revision=REVISION, local_dir=source, token=False)
+        print("正在裁剪前 8 层…", flush=True)
+        export(source, trimmed)
+        output.mkdir(parents=True, exist_ok=True)
+        # Publish the weights last so inference only discovers a complete new frontend.
+        for name in ("config.json", *COMPANION_FILES, "README.md", "model.safetensors"):
+            (trimmed / name).replace(output / name)
+        shutil.rmtree(work)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
+    parser.add_argument("source", type=Path, nargs="?")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    export(args.source, args.output)
+    if args.source is None:
+        download_and_export(args.output.resolve())
+    else:
+        export(args.source, args.output)

@@ -647,9 +647,9 @@ if (Test-Path $ffmpegSrc) {
 
 # Include the provisioned x64 inference bundle in local desktop distributions.
 # Upstream builds and ARM64 packages can still use an external interpreter.
-$flatModels = if ($env:MIACODE_FLAT_MODELS) { $env:MIACODE_FLAT_MODELS } else { Join-Path $repoRoot "third_party/flat320-features" }
-if ($Arch -eq "x64" -and ($env:MIACODE_FLAT_MODELS -or (Test-Path -LiteralPath $flatModels))) {
-    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -ModelsSource $flatModels -NoTorch:$NoTorch
+$flatSource = if ($env:MIACODE_FLAT_SOURCE) { $env:MIACODE_FLAT_SOURCE } else { Join-Path $repoRoot "../../repos-0wd-v3/worktrees/v19-flat320-drafter-te" }
+if ($Arch -eq "x64" -and ($env:MIACODE_FLAT_SOURCE -or (Test-Path -LiteralPath $flatSource))) {
+    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -WorktreeRoot $flatSource -NoTorch:$NoTorch
 }
 
 # Required package contents come from the toolchain data file.

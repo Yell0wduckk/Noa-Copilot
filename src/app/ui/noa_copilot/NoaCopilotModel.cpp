@@ -145,6 +145,18 @@ NoaCopilotModel::NoaCopilotModel(
 
     rebuildDesignerOptions({});
     loadPreferences();
+    connect(&environmentInstaller_, &NoaEnvironmentInstaller::changed, this, &NoaCopilotModel::environmentInstallChanged);
+    connect(&environmentInstaller_, &NoaEnvironmentInstaller::repairing, this, [this](const QString& python) {
+        if (python == cpuPython() || python == cudaPython_) stopDaemon();
+    });
+    connect(&environmentInstaller_, &NoaEnvironmentInstaller::installed, this, [this](const QString& python, bool cuda) {
+        if (cuda) cudaPython_ = python;
+        if (!cuda || !cpuAvailable_) cpuPython_ = python;
+        savePreferences();
+        emit configChanged();
+        scanEnvironments(false);
+        if (enabled_) restartDaemon();
+    });
     refreshCheckpoints();
     if (QFileInfo::exists(QDir(defaultBuiltinRoot()).filePath(".miacode/.noacopilot")))
         noa_cache::rememberProject(defaultBuiltinRoot());
@@ -258,6 +270,94 @@ QString NoaCopilotModel::cpuPython() const
     return cpuPython_.isEmpty() ? QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe")) : cpuPython_;
 }
 
+bool NoaCopilotModel::mertInstalled() const
+{
+    return QFileInfo::exists(QDir(defaultBuiltinRoot()).filePath("models/mert-v2/model.safetensors"));
+}
+
+bool NoaCopilotModel::environmentDownloadSupported() const
+{
+#if defined(Q_OS_WIN) && defined(Q_PROCESSOR_X86_64)
+    return true;
+#else
+    return false;
+#endif
+}
+
+void NoaCopilotModel::downloadEnvironment(bool cuda)
+{
+    if (environmentDownloadSupported()) environmentInstaller_.install(defaultBuiltinRoot(), cuda, environmentSource_);
+}
+
+void NoaCopilotModel::setEnvironmentSource(const QString& source)
+{
+    if (source == environmentSource_) return;
+    environmentSource_ = source;
+    savePreferences();
+    emit configChanged();
+}
+
+void NoaCopilotModel::downloadMert()
+{
+    if (mertInstalling() || mertInstalled()) return;
+    QFile script(":/noa/export-mert-v2-l8.py");
+    if (!script.open(QIODevice::ReadOnly)) {
+        mertInstallStatus_ = script.errorString();
+        emit mertInstallChanged();
+        return;
+    }
+
+    const QString python = mertDevice_ == "cuda" ? cudaPython_ : cpuPython();
+    const QString root = defaultBuiltinRoot();
+    auto* process = new QProcess(this);
+    mertInstaller_ = process;
+    mertInstallStatus_ = QStringLiteral("正在连接 MERT2 官方仓库…");
+    emit mertInstallChanged();
+    auto env = QProcessEnvironment::systemEnvironment();
+    env.insert("PYTHONIOENCODING", "utf-8");
+    process->setProcessEnvironment(env);
+    process->setWorkingDirectory(root);
+    connect(process, &QProcess::readyReadStandardOutput, this, [this, process] {
+        while (process->canReadLine()) {
+            mertInstallStatus_ = QString::fromUtf8(process->readLine()).trimmed();
+        }
+        emit mertInstallChanged();
+    });
+    auto finish = [this, process](bool success, const QString& error) {
+        if (mertInstaller_ != process) return;
+        mertInstaller_ = nullptr;
+        process->deleteLater();
+        mertInstallStatus_ = success ? QString() : QStringLiteral("下载失败：%1").arg(error);
+        emit mertInstallChanged();
+        if (success) {
+            boundSongKey_.clear();
+            sendBindSongIfNeeded();
+        }
+    };
+    connect(process, &QProcess::errorOccurred, this, [process, finish](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            finish(false, QStringLiteral("请在高级设置中配置音频特征推理环境。%1").arg(process->errorString()));
+    });
+    connect(process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [process, finish](int code, QProcess::ExitStatus status) {
+        const QString detail = QString::fromUtf8(process->readAllStandardError()).trimmed().section('\n', -1);
+        finish(status == QProcess::NormalExit && code == 0,
+               detail.isEmpty() ? QStringLiteral("进程退出 (%1)").arg(code) : detail);
+    });
+    const QStringList args{"-B", "-u", "-c", QString::fromUtf8(script.readAll()), "models/mert-v2"};
+#ifdef Q_OS_WIN
+    if (python.startsWith('/')) {
+        QStringList launch;
+        if (!wslDistribution_.isEmpty()) launch << "--distribution" << wslDistribution_;
+        launch << "--cd" << QDir::toNativeSeparators(root) << "--exec" << "env"
+               << "PYTHONIOENCODING=utf-8" << python;
+        process->start("wsl.exe", launch + args);
+        return;
+    }
+#endif
+    process->start(python, args);
+}
+
 QString NoaCopilotModel::resolvedSourceRoot() const
 {
     if (sourceMode_ == QStringLiteral("custom") && !customSourceRoot_.trimmed().isEmpty()) {
@@ -312,6 +412,7 @@ void NoaCopilotModel::loadPreferences()
     cpuThreads_ = sec["cpu_threads"].toInt(4);
     mertDevice_ = sec["mert_device"].toString(QStringLiteral("cpu"));
     cpuPython_ = sec["cpu_python"].toString();
+    environmentSource_ = sec["environment_source"].toString("tuna");
     cudaPython_ = sec["cuda_python"].toString();
     enabled_ = sec.value(QStringLiteral("enabled")).toBool(true);
     defaultDesigner_ = sec.value(QStringLiteral("default_designer")).toString();
@@ -354,6 +455,7 @@ void NoaCopilotModel::savePreferences() const
     sec["cpu_threads"] = cpuThreads_;
     sec["mert_device"] = mertDevice_;
     sec["cpu_python"] = cpuPython_;
+    sec["environment_source"] = environmentSource_;
     sec["cuda_python"] = cudaPython_;
     sec.insert(QStringLiteral("enabled"), enabled_);
     sec.insert(QStringLiteral("default_designer"), defaultDesigner_);
@@ -1348,24 +1450,31 @@ void NoaCopilotModel::scanEnvironments(bool discover)
         if (generation!=scanGeneration_) return;
         environments_=*rows;
         cpuAvailable_ = cudaAvailable_ = cpuMertAvailable_ = cudaMertAvailable_ = false;
-        QString reason;
+        const auto pathStatus = [](const QString& path) {
+            return path.isEmpty() ? QStringLiteral("未配置") : QStringLiteral("找不到 Python：%1").arg(path);
+        };
+        QString cpuStatus = pathStatus(cpu);
+        QString cudaStatus = pathStatus(cuda);
         for (const auto& v : *rows) {
-            const auto row=v.toMap();
-            const QString path=row["path"].toString();
-            if (path==QDir::fromNativeSeparators(cpu)) {
+            const auto row = v.toMap();
+            const QString path = row["path"].toString();
+            const QString reason = row["reason"].toString();
+            if (path == QDir::fromNativeSeparators(cpu)) {
                 cpuAvailable_ = row["cpu"].toBool();
                 cpuMertAvailable_ = cpuAvailable_ && row["mert"].toBool();
-                if (cpuAvailable_ && !cpuMertAvailable_) reason = row["mertReason"].toString();
-                if (!cpuAvailable_) reason = row["reason"].toString();
+                cpuStatus = reason.isEmpty() ? QStringLiteral("就绪") : reason;
             }
-            if (path==QDir::fromNativeSeparators(cuda)) {
-                cudaAvailable_=row["cuda"].toBool();
+            if (path == QDir::fromNativeSeparators(cuda)) {
+                cudaAvailable_ = row["cuda"].toBool();
                 cudaMertAvailable_ = cudaAvailable_ && row["mert"].toBool();
-                if (cudaAvailable_ && !cudaMertAvailable_) reason = row["mertReason"].toString();
-                if (!cudaAvailable_) reason=row["reason"].toString();
+                QStringList details;
+                if (!reason.isEmpty()) details << reason;
+                const QString device = row["cudaReason"].toString();
+                if (!device.isEmpty()) details << device;
+                cudaStatus = details.isEmpty() ? QStringLiteral("就绪") : details.join('\n');
             }
         }
-        environmentStatus_=reason;
+        environmentStatus_ = QStringLiteral("CPU 环境：%1\nCUDA 环境：%2").arg(cpuStatus, cudaStatus);
         emit configChanged();
     });
     thread->start();
@@ -2452,7 +2561,7 @@ constexpr double guideStartSeconds = 12 * guideBeatSeconds;
 const QStringList& guideGroup1Beats()
 {
     static const QStringList beats = {
-        QStringLiteral("{4}4/7>8-5p4[4:3],"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
+        QStringLiteral("{4}4/7>8-5q4[4:3],"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
         QStringLiteral("\n{4},"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
         QStringLiteral("\n{4},"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),
         QStringLiteral("\n{4},"), QStringLiteral(","), QStringLiteral(","), QStringLiteral(","),

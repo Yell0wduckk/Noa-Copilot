@@ -3,7 +3,7 @@ param(
     [string]$WorktreeRoot = $env:MIACODE_FLAT_SOURCE,
     [string]$SourceRevision = $env:MIACODE_FLAT_REVISION,
     [string]$PythonEnvSource = $env:MIACODE_NOA_PYTHON_ENV,
-    [string]$ModelsSource = $env:MIACODE_FLAT_MODELS,
+    [string]$ModelsSource,
     [string]$WslDistribution = $env:MIACODE_WSL_DISTRO,
     [string]$WslPython = $env:MIACODE_WSL_PYTHON,
     [switch]$NoTorch,
@@ -14,7 +14,6 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if (!$WorktreeRoot) { $WorktreeRoot = Join-Path $repoRoot "../../repos-0wd-v3/worktrees/v19-flat320-drafter-te" }
 if (!$SourceRevision) { $SourceRevision = "HEAD" }
 if (!$PythonEnvSource) { $PythonEnvSource = Join-Path $repoRoot "third_party/noa-copilot-env" }
-if (!$ModelsSource) { $ModelsSource = Join-Path $repoRoot "third_party/flat320-features" }
 $runtime = Join-Path $DistDir "noa-copilot"
 
 function Copy-RuntimeTree([string]$Source, [string]$Target) {
@@ -56,10 +55,12 @@ $architecture = [regex]::Match($identity, '(?m)^ARCHITECTURE = "([^"]+)"').Group
 if ($SourceOnly) { return }
 
 if (!$NoTorch) { Copy-RuntimeTree $PythonEnvSource (Join-Path $runtime "env") }
-$dst = New-Item -ItemType Directory -Force (Join-Path $runtime "models/mert-v2")
-foreach ($name in @("config.json", "model.safetensors", "configuration_mert2.py", "modeling_mert2.py",
-                    "preprocessor_config.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md")) {
-    Copy-Item -LiteralPath (Join-Path $ModelsSource "mert-v2/$name") -Destination $dst.FullName -Force
+if ($ModelsSource) {
+    $dst = New-Item -ItemType Directory -Force (Join-Path $runtime "models/mert-v2")
+    foreach ($name in @("config.json", "model.safetensors", "configuration_mert2.py", "modeling_mert2.py",
+                        "preprocessor_config.json", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md")) {
+        Copy-Item -LiteralPath (Join-Path $ModelsSource "mert-v2/$name") -Destination $dst.FullName -Force
+    }
 }
 New-Item -ItemType Directory -Force (Join-Path $runtime "checkpoints") | Out-Null
 $wslSettings = @{ python=$WslPython; distribution=$WslDistribution }

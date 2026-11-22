@@ -15,7 +15,11 @@
 
 ## 设备、缓存与采样
 
-谱面模型和 MERT 可分别选择 CPU 或 CUDA。谱面 CPU 默认使用 4 个线程。完整包带有 `app/noa-copilot/env/python.exe`，轻量包可在高级设置中扫描或指定本地 Python。CUDA 支持 Windows 与 WSL Python，两个设备设置共用所选 CUDA 路径。使用两个不同环境时，MERT 只在提取时启动，提取完成后退出。同进程 CUDA 提取完成即释放 MERT 权重和空闲显存，CPU 提取可在切歌时复用权重。设置中的“浏览…”可分别选择解释器。环境扫描分别判断谱面解码与 MERT 能力，随包 MERT 模型需要 torchaudio 的频谱变换。
+Windows x64 设置中的「运行环境下载源」默认优先使用清华 TUNA 下载 pip 依赖，也可选择中国科大、阿里云或仅官方源。国内配置从华为云 NuGet 镜像获取独立 Python，从南京大学、阿里云和上海交大的 PyTorch 专用镜像获取 torch 和 torchaudio。下载失败会自动尝试备用地址，最后回退到官方源。MERT2 使用 Hugging Face 官方仓库。切换下载源只影响后续安装。
+
+谱面模型和 MERT 可分别选择 CPU 或 CUDA。谱面 CPU 默认使用 4 个线程。完整包带有 `app/noa-copilot/env/python.exe`，轻量包可在高级设置中扫描或指定本地 Python。CUDA 支持 Windows 与 WSL Python，两个设备设置共用所选 CUDA 路径。使用两个不同环境时，MERT 只在提取时启动，提取完成后退出。同进程 CUDA 提取完成即释放 MERT 权重和空闲显存，CPU 提取可在切歌时复用权重。设置中的“浏览…”可分别选择解释器。环境扫描分别判断谱面解码与 MERT 能力，MERT 模型需要 torchaudio 的频谱变换。
+
+Windows x64 轻量包支持在 NoaCopilot 设置中按需安装 PyTorch 2.11.0 CPU 或 CUDA 12.6 版。应用把独立 Python 和音频依赖安装到 `app/noa-copilot/environments`，安装完成后选择该解释器。高级设置按 CPU、CUDA 分别列出缺失的包和 DLL。再次点击对应的安装按钮会修复应用内置环境，复查通过后显示就绪。CUDA 版也支持 CPU 推理；尚无可用 CPU 环境时，两项共用新装的 CUDA 版。
 
 项目缓存位于音频旁的 `.miacode/.noacopilot/`。MERT、RoFormer 和 Drafter 特征自动保存。高级设置显示已索引项目和旧版 NoaCopilot 公共缓存的合计占用。“清理全部缓存”按文件报告成功和失败数，已移走的文件直接跳过。首次有 BPM 或拍速图、偏移、难度条件发生变化时，编辑器会在约半秒后预热。普通音符编辑复用现有网格，修改定数只更新条件特征。音频结束之后的手写长音仍能延续。同曲替换音频按内容重新绑定缓存。
 
@@ -23,12 +27,8 @@
 
 ## 重建推理包
 
-1. 在本仓库根目录运行下面的命令。从完整的本地快照导出原精度的声学前端、下采样器和前八个 Conformer 块。第 8 层输出为 25 Hz × 1024，125 Hz 双窗 Mel 由谱面源码另行计算。导出的模型目录包含原许可证和裁剪说明。
+1. 使用 Qt 6.11.1 的 Release 目录构建 `MiaCode` 和 `MiaCodeLauncher`。运行 `scripts/build/package-win.ps1` 打包到新的发布目录，加 `-NoTorch` 可生成使用外部 Python 的轻量包。默认从工作区的 `repos-0wd-v3/worktrees/v19-flat320-drafter-te` 导出已提交的 `src/maidata`。可用 `MIACODE_FLAT_SOURCE` 和 `MIACODE_NOA_PYTHON_ENV` 指定源码仓库和可搬移的 Windows Python 环境。
 
-   ```powershell
-   third_party/noa-copilot-env/python.exe scripts/build/export-mert-v2-l8.py ../MERT-v2-FullSong third_party/flat320-features/mert-v2
-   ```
-
-2. 使用 Qt 6.11.1 的 Release 目录构建 `MiaCode` 和 `MiaCodeLauncher`。运行 `scripts/build/package-win.ps1` 打包到新的发布目录。在命令后加 `-NoTorch` 可生成使用外部 Python 的轻量包。默认从工作区的 `repos-0wd-v3/worktrees/v19-flat320-drafter-te` 导出已提交的 `src/maidata`，将 Git 提交号记录到 `app/noa-copilot/runtime.json`。可用 `MIACODE_FLAT_SOURCE`、`MIACODE_FLAT_MODELS` 和 `MIACODE_NOA_PYTHON_ENV` 分别指定模型源码仓库、已裁剪模型的父目录和可搬移的 Windows Python 安装。
+2. 两种发布包都省略 MERT2 权重。用户从 NoaCopilot 设置点击「下载 MERT2」后，应用用选定的音频特征推理环境下载官方 FullSong 快照并裁剪到前八层。安装目录包含原许可证、来源和裁剪说明，安装成功后清理下载的完整快照。已有八层模型的离线安装可继续使用。
 
 3. 通过 `MIACODE_WSL_DISTRO` 和 `MIACODE_WSL_PYTHON` 指定本包的初始 CUDA 环境。本机使用 `Ubuntu-22.04` 的 `/home/dev/.venvs/sheetsage2-cu126/bin/python`。内置模式升级时会替换上一发布包写入的默认解释器，用户选择的其他解释器继续生效。两种设备均从 `app/noa-copilot/models/mert-v2` 加载本地前端。

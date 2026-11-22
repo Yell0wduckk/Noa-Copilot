@@ -871,6 +871,8 @@ qt_add_qml_module(MiaCode
         src/app/ui/ApplicationContext.cpp
         src/app/ui/noa_copilot/NoaCacheIndex.cpp
         src/app/ui/noa_copilot/NoaEnvironments.cpp
+        src/app/ui/noa_copilot/NoaEnvironmentInstaller.cpp
+        src/app/ui/noa_copilot/NoaEnvironmentInstaller.h
         src/app/ui/noa_copilot/NoaMaterializer.cpp
         src/app/ui/noa_copilot/NoaCopilotModel.cpp
         src/app/ui/noa_copilot/NoaCopilotModel.h
@@ -950,6 +952,11 @@ qt_add_resources(MiaCode "miacode_i18n"
     PREFIX "/i18n"
     BASE "${CMAKE_CURRENT_BINARY_DIR}"
     FILES ${MIACODE_TRANSLATION_QM_FILES}
+)
+qt_add_resources(MiaCode "noa_mert_installer"
+    PREFIX "/noa"
+    BASE "scripts/build"
+    FILES scripts/build/export-mert-v2-l8.py scripts/build/download-torch-wheel.py scripts/build/probe-noa-environment.py
 )
 add_dependencies(MiaCode miacode_lrelease)
 

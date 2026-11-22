@@ -163,7 +163,7 @@
             'slide_break_start.wav', 'slide_break_slide.wav', 'tap_ex.wav', 'tap_perfect.wav',
             'touch_hanabi.wav', 'touch.wav', 'touch_Hold_riser.wav', 'clock.wav'
         )
-        ReleaseDocs = @('LICENSE', 'THIRD_PARTY_NOTICES.md')
+        ReleaseDocs = @('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')
         # Required entries. 'qt:<BaseName>' expands to app\<BaseName>[d].dll;
         # 'toolchain-runtime:<DllName>' expands to app\<DllName> and is only
         # required for the toolchain that ships that runtime.
