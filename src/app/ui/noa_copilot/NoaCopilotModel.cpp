@@ -225,8 +225,12 @@ QString NoaCopilotModel::defaultCheckpointsDir() const
 QString NoaCopilotModel::resolvedPythonPath() const
 {
     if (device_ == QStringLiteral("cuda")) return cudaPython_;
-    if (!cpuPython_.isEmpty()) return cpuPython_;
-    return QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe"));
+    return cpuPython();
+}
+
+QString NoaCopilotModel::cpuPython() const
+{
+    return cpuPython_.isEmpty() ? QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe")) : cpuPython_;
 }
 
 QString NoaCopilotModel::resolvedSourceRoot() const
@@ -276,18 +280,8 @@ QVariantList NoaCopilotModel::envModeOptions() const
 
 QVariantList NoaCopilotModel::sourceModeOptions() const
 {
-    QString bundledLabel = QStringLiteral("MiaCode 内置 Flat320 推理源码");
-    QFile runtimeManifest(QDir(defaultBuiltinRoot()).filePath(QStringLiteral("runtime.json")));
-    if (runtimeManifest.open(QIODevice::ReadOnly)) {
-        const QString architecture = QJsonDocument::fromJson(runtimeManifest.readAll())
-                                         .object().value(QStringLiteral("architecture")).toString();
-        const qsizetype version = architecture.lastIndexOf(QStringLiteral(".v"));
-        if (version >= 0) {
-            bundledLabel += QStringLiteral(" (%1)").arg(architecture.mid(version + 1));
-        }
-    }
     return {
-        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), bundledLabel}},
+        QVariantMap{{QStringLiteral("value"), QStringLiteral("bundled")}, {QStringLiteral("label"), QStringLiteral("Miacode 内置推理源码")}},
         QVariantMap{{QStringLiteral("value"), QStringLiteral("custom")}, {QStringLiteral("label"), QStringLiteral("自定义 Worktree / 推理源码目录")}},
     };
 }
@@ -300,8 +294,8 @@ void NoaCopilotModel::loadPreferences()
     continuationLines_ = qBound(1, sec["continuation_lines"].toInt(4), 64);
     candidateCount_ = qBound(1, sec["candidate_count"].toInt(3), 8);
     cpuThreads_ = sec["cpu_threads"].toInt(4);
-    mertCache_ = sec["mert_cache"].toBool(true);
-    roformerCache_ = sec["roformer_cache"].toBool(true);
+    saveAudioFeatures_ = sec["save_audio_features"].toBool(
+        sec["mert_cache"].toBool(true) && sec["roformer_cache"].toBool(true));
     mertDevice_ = sec["mert_device"].toString(QStringLiteral("cpu"));
     cpuPython_ = sec["cpu_python"].toString();
     cudaPython_ = sec["cuda_python"].toString();
@@ -326,7 +320,7 @@ void NoaCopilotModel::loadPreferences()
     sourceMode_ = normalizeModeToken(sec.value(QStringLiteral("source_mode")).toString(QStringLiteral("bundled")));
     customSourceRoot_ = sec.value(QStringLiteral("custom_source_root")).toString();
     if (device_ == "auto") device_ = "cpu";
-    if (cpuPython_.isEmpty() && pythonMode_ == "custom") cpuPython_ = customPythonPath_;
+    if (!sec.contains("cpu_python") && pythonMode_ == "custom") cpuPython_ = customPythonPath_;
     if (!sec.contains("cuda_python")) cudaPython_ = device_ == "cuda" && pythonMode_ == "custom" ? customPythonPath_ : wslPython_;
     // The previous Windows bundle saved its default interpreter in user preferences.
     if (sourceMode_ == QStringLiteral("bundled") && pythonMode_ == QStringLiteral("bundled")
@@ -344,8 +338,7 @@ void NoaCopilotModel::savePreferences() const
     sec["continuation_lines"] = continuationLines_;
     sec["candidate_count"] = candidateCount_;
     sec["cpu_threads"] = cpuThreads_;
-    sec["mert_cache"] = mertCache_;
-    sec["roformer_cache"] = roformerCache_;
+    sec["save_audio_features"] = saveAudioFeatures_;
     sec["mert_device"] = mertDevice_;
     sec["cpu_python"] = cpuPython_;
     sec["cuda_python"] = cudaPython_;
@@ -537,19 +530,10 @@ void NoaCopilotModel::setCpuThreads(int value)
     if (enabled_) restartDaemon();
 }
 
-void NoaCopilotModel::setMertCache(bool value)
+void NoaCopilotModel::setSaveAudioFeatures(bool value)
 {
-    if (mertCache_ == value) return;
-    mertCache_ = value;
-    savePreferences();
-    emit configChanged();
-    warmTimer_.start();
-}
-
-void NoaCopilotModel::setRoformerCache(bool value)
-{
-    if (roformerCache_ == value) return;
-    roformerCache_ = value;
+    if (saveAudioFeatures_ == value) return;
+    saveAudioFeatures_ = value;
     savePreferences();
     emit configChanged();
     warmTimer_.start();
@@ -566,6 +550,8 @@ void NoaCopilotModel::setMertDevice(QString value)
 
 void NoaCopilotModel::setCpuPython(QString value)
 {
+    value = QDir::fromNativeSeparators(value.trimmed());
+    if (value == QDir(defaultBuiltinRoot()).filePath(QStringLiteral("env/python.exe"))) value.clear();
     if (cpuPython_ == value) return;
     cpuPython_ = value;
     savePreferences();
@@ -843,7 +829,7 @@ void NoaCopilotModel::browseEnvironmentPython(bool cpu)
 {
     miacode::FileRequest req;
     req.title = cpu ? QStringLiteral("选择 CPU Python 解释器") : QStringLiteral("选择 CUDA Python 解释器");
-    req.startPath = cpu ? cpuPython_ : cudaPython_;
+    req.startPath = cpu ? cpuPython() : cudaPython_;
     req.nameFilters = {QStringLiteral("Python (python*.exe python python3*)"), QStringLiteral("All Files (*.*)")};
     uiRequests_.requestFile(req, [this, cpu](const QString& chosen) {
         if (chosen.isEmpty()) return;
@@ -1295,7 +1281,7 @@ QJsonObject NoaCopilotModel::chartRequest() const
         {"first",currentChartFirstSeconds()},{"bpm",currentChartBpm()},
         {"level",parseLevelNumeric(document_.currentDifficultyLevel())},{"difficulty",document_.currentDifficultyId()},
         {"designer",effectiveDesigner()},{"line_align_beats",lineAlignBeats_},{"candidate_count",candidateCount_},
-        {"mert_cache",mertCache_},{"roformer_cache",roformerCache_}};
+        {"mert_cache",saveAudioFeatures_},{"roformer_cache",saveAudioFeatures_}};
     for (const auto& key : {QStringLiteral("shortid"),QStringLiteral("cabinet"),QStringLiteral("version")}) {
         QRegularExpression field("^&" + key + "=([^\\r\\n]+)",QRegularExpression::MultilineOption);
         const auto match = field.match(extra);
@@ -1307,7 +1293,7 @@ QJsonObject NoaCopilotModel::chartRequest() const
 void NoaCopilotModel::scanEnvironments(bool discover)
 {
     const int generation=++scanGeneration_;
-    const QString cpu=cpuPython_.isEmpty() ? QDir(defaultBuiltinRoot()).filePath("env/python.exe") : cpuPython_;
+    const QString cpu = cpuPython();
     const QString cuda=cudaPython_, distro=wslDistribution_;
     environmentStatus_=QStringLiteral("正在检测 PyTorch 环境…");
     emit configChanged();

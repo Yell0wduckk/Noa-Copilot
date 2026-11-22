@@ -1135,52 +1135,56 @@ AppDialog {
                                 title: "运行环境与推理源码"
 
                                 Repeater {
-                                    model: ["谱面推理设备","MERT 分析设备"]
-                                    delegate: RowLayout {
+                                    model: ["谱面分析环境", "音频特征推理环境"]
+                                    delegate: PreferenceCombo {
                                         required property string modelData
-                                        id: deviceRow
                                         required property int index
-                                        readonly property bool chartDevice: index === 0
-                                        Text { text: modelData; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
-                                        Repeater {
-                                            model: ["cpu","cuda"]
-                                            delegate: RowLayout {
-                                                id: deviceChoice
-                                                required property string modelData
-                                                readonly property bool cpu: modelData === "cpu"
-                                                readonly property bool available: !!root.noaCopilot
-                                                    && (deviceRow.chartDevice
-                                                        ? (cpu ? root.noaCopilot.cpuAvailable : root.noaCopilot.cudaAvailable)
-                                                        : (cpu ? root.noaCopilot.cpuMertAvailable : root.noaCopilot.cudaMertAvailable))
-                                                AppButton {
-                                                    enabled: deviceChoice.available
-                                                    text: (deviceChoice.cpu ? "CPU" : "CUDA")
-                                                        + (deviceChoice.cpu === deviceRow.chartDevice ? "（推荐）" : "")
-                                                        + ((deviceRow.chartDevice ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) === deviceChoice.modelData ? " ✓" : "")
-                                                    onClicked: if (deviceRow.chartDevice) root.noaCopilot.device = deviceChoice.modelData
-                                                               else root.noaCopilot.mertDevice = deviceChoice.modelData
-                                                }
-                                                Text {
-                                                    visible: !!root.noaCopilot && !deviceChoice.available
-                                                    text: "请配置" + deviceChoice.modelData.toUpperCase() + "环境路径"
-                                                    color: Theme.colors.syntax.error
-                                                    font.pixelSize: Theme.captionFontSize
-                                                }
-                                            }
+                                        readonly property bool chart: index === 0
+                                        readonly property bool cpuReady: chart ? !!root.noaCopilot?.cpuAvailable : !!root.noaCopilot?.cpuMertAvailable
+                                        readonly property bool cudaReady: chart ? !!root.noaCopilot?.cudaAvailable : !!root.noaCopilot?.cudaMertAvailable
+                                        label: modelData
+                                        currentValue: (chart ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) ?? "cpu"
+                                        options: [
+                                            {value: "cpu", label: "CPU" + (cpuReady ? (chart ? "（推荐）" : "") : "（未就绪）")},
+                                            {value: "cuda", label: "CUDA" + (cudaReady ? (chart ? "" : "（推荐）") : "（未就绪）")}
+                                        ].filter(option => option.value === currentValue || (option.value === "cpu" ? cpuReady : cudaReady))
+                                        onPicked: value => {
+                                            if (chart) root.noaCopilot.device = value
+                                            else root.noaCopilot.mertDevice = value
                                         }
                                     }
                                 }
                                 Repeater {
-                                    model: ["CPU","CUDA"]
+                                    model: ["CPU", "CUDA"]
                                     delegate: RowLayout {
+                                        id: pathRow
                                         required property string modelData
                                         readonly property bool cpu: modelData === "CPU"
+                                        readonly property string path: (cpu ? root.noaCopilot?.cpuPython : root.noaCopilot?.cudaPython) ?? ""
+                                        readonly property var discovered: (root.noaCopilot?.environments ?? []).filter(
+                                            env => (cpu ? env.cpu : env.cuda) && env.path !== path)
+                                        function setPath(path) {
+                                            if (cpu) root.noaCopilot.cpuPython = path
+                                            else root.noaCopilot.cudaPython = path
+                                        }
                                         Text { text: modelData + " 环境"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
                                         AppTextField {
                                             Layout.fillWidth: true
-                                            placeholderText: parent.cpu ? "内置环境或 python.exe" : "python.exe 或 WSL /…/bin/python"
-                                            text: root.noaCopilot ? (parent.cpu ? root.noaCopilot.cpuPython : root.noaCopilot.cudaPython) : ""
-                                            onEditingFinished: if (parent.cpu) root.noaCopilot.cpuPython=text; else root.noaCopilot.cudaPython=text
+                                            placeholderText: "python.exe 或 WSL /…/bin/python"
+                                            text: pathRow.path
+                                            onEditingFinished: {
+                                                pathRow.setPath(text)
+                                                text = Qt.binding(() => pathRow.path)
+                                            }
+                                        }
+                                        AppComboBox {
+                                            visible: pathRow.discovered.length > 0
+                                            model: pathRow.discovered
+                                            textRole: "path"
+                                            displayText: "已发现环境"
+                                            currentIndex: -1
+                                            Layout.preferredWidth: 120
+                                            onActivated: index => pathRow.setPath(model[index].path)
                                         }
                                         AppButton {
                                             text: "浏览…"
@@ -1194,15 +1198,6 @@ AppDialog {
                                     AppButton { text: "扫描本机环境"; onClicked: root.noaCopilot.scanEnvironments() }
                                 }
                                 Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: root.noaCopilot?.environmentStatus ?? ""; visible: text.length > 0; color: Theme.colors.text.secondary }
-                                Repeater {
-                                    model: root.noaCopilot?.environments ?? []
-                                    delegate: RowLayout {
-                                        required property var modelData
-                                        Text { Layout.fillWidth: true; text: modelData.label; elide: Text.ElideMiddle; color: Theme.colors.text.secondary }
-                                        AppButton { text: "用作 CPU"; enabled: modelData.cpu; onClicked: root.noaCopilot.cpuPython=modelData.path }
-                                        AppButton { text: "用作 CUDA"; enabled: modelData.cuda; onClicked: root.noaCopilot.cudaPython=modelData.path }
-                                    }
-                                }
                                 PreferenceCombo {
                                     label: "推理精度"
                                     options: root.noaCopilot?.precisionModeOptions ?? []
@@ -1268,8 +1263,11 @@ AppDialog {
                                         onMoved: v => root.noaCopilot[modelData.key] = Math.round(v)
                                     }
                                 }
-                                AppCheckBox { text: "保存 MERT 特征"; checked: root.noaCopilot?.mertCache ?? true; onClicked: root.noaCopilot.mertCache = checked }
-                                AppCheckBox { text: "保存 RoFormer 和 Drafter 特征"; checked: root.noaCopilot?.roformerCache ?? true; onClicked: root.noaCopilot.roformerCache = checked }
+                                AppCheckBox {
+                                    text: "保存音频特征"
+                                    checked: root.noaCopilot?.saveAudioFeatures ?? true
+                                    onClicked: root.noaCopilot.saveAudioFeatures = checked
+                                }
                                 PreferenceSlider {
                                     label: "Slide 偏置"
                                     suffix: ""

@@ -70,8 +70,7 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(int lineAlignBeats READ lineAlignBeats WRITE setLineAlignBeats NOTIFY configChanged)
     Q_PROPERTY(int candidateCount READ candidateCount WRITE setCandidateCount NOTIFY configChanged)
     Q_PROPERTY(int cpuThreads READ cpuThreads WRITE setCpuThreads NOTIFY configChanged)
-    Q_PROPERTY(bool mertCache READ mertCache WRITE setMertCache NOTIFY configChanged)
-    Q_PROPERTY(bool roformerCache READ roformerCache WRITE setRoformerCache NOTIFY configChanged)
+    Q_PROPERTY(bool saveAudioFeatures READ saveAudioFeatures WRITE setSaveAudioFeatures NOTIFY configChanged)
     Q_PROPERTY(QString mertDevice READ mertDevice WRITE setMertDevice NOTIFY configChanged)
     Q_PROPERTY(QString cpuPython READ cpuPython WRITE setCpuPython NOTIFY configChanged)
     Q_PROPERTY(QString cudaPython READ cudaPython WRITE setCudaPython NOTIFY configChanged)
@@ -224,13 +223,11 @@ public:
     void setCandidateCount(int value);
     int cpuThreads() const { return cpuThreads_; }
     void setCpuThreads(int value);
-    bool mertCache() const { return mertCache_; }
-    void setMertCache(bool value);
-    bool roformerCache() const { return roformerCache_; }
-    void setRoformerCache(bool value);
+    bool saveAudioFeatures() const { return saveAudioFeatures_; }
+    void setSaveAudioFeatures(bool value);
     QString mertDevice() const { return mertDevice_; }
     void setMertDevice(QString value);
-    QString cpuPython() const { return cpuPython_; }
+    QString cpuPython() const;
     void setCpuPython(QString value);
     QString cudaPython() const { return cudaPython_; }
     void setCudaPython(QString value);
@@ -353,8 +350,7 @@ private:
     int continuationLines_ = 4;
     int candidateCount_ = 3;
     int cpuThreads_ = 4;
-    bool mertCache_ = true;
-    bool roformerCache_ = true;
+    bool saveAudioFeatures_ = true;
     QString mertDevice_ = QStringLiteral("cpu");
     QString cpuPython_ = {};
     QString cudaPython_ = {};
