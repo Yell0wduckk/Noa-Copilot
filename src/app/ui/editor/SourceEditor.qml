@@ -59,6 +59,10 @@ Rectangle {
     signal normalizeChartRequested()
     signal completionSettingsRequested(string group)
     function focusEditor() { sourceArea.forceActiveFocus() }
+    function focusEditorAtEnd() {
+        sourceArea.forceActiveFocus()
+        sourceArea.cursorPosition = sourceArea.text.length
+    }
     readonly property var bookmarks: sourceArea.bookmarks
     readonly property bool canUndo: sourceArea.canUndo
     readonly property bool canRedo: sourceArea.canRedo

@@ -2164,7 +2164,7 @@ void NoaCopilotModel::notifyEditorCursorOrTextChanged(
 
 bool NoaCopilotModel::candidateSessionActive() const
 {
-    if (guidePracticeActive_) return guideStage_ >= 1 && guideStage_ <= 7;
+    if (guidePracticeActive_) return !guidePracticePaused_ && guideStage_ >= 1 && guideStage_ <= 7;
     return enabled_ && !fullStreamingActive_ && (ghostActive_ || !candidates_.isEmpty()
         || (activeRequestId_ > 0 && activeRequestMode_ == QStringLiteral("continue")));
 }
@@ -2442,6 +2442,10 @@ void NoaCopilotModel::dismissAllActivePreviews()
 }
 
 namespace {
+// At 200 BPM the practice prefix occupies three four-beat measures.
+constexpr double guideBeatSeconds = 60.0 / 200.0;
+constexpr double guideStartSeconds = 12 * guideBeatSeconds;
+
 const QStringList& guideGroup1Beats()
 {
     static const QStringList beats = {
@@ -2590,12 +2594,12 @@ void NoaCopilotModel::showGuideCandidate()
 void NoaCopilotModel::startGuidePractice()
 {
     guideStreamTimer_.stop();
-    const bool wasActive = guidePracticeActive_;
     guidePracticeActive_ = false;
     dismissAllActivePreviews();
     warmTimer_.stop();
 
     guidePracticeActive_ = true;
+    guidePracticePaused_ = false;
     guideStage_ = 0;
     guideCandidate_ = 0;
     guideStreamBeat_ = 0;
@@ -2607,19 +2611,19 @@ void NoaCopilotModel::startGuidePractice()
         ? QStringLiteral("\n")
         : QString();
 
-    if (editorBridge_ != nullptr) {
-        editorBridge_->setProperty("cursorPosition", guideInsertPos_);
-        QTimer::singleShot(0, this, [this]() {
-            if (guidePracticeActive_ && guideStage_ == 0 && editorBridge_ != nullptr) {
-                editorBridge_->setProperty("cursorPosition", guideInsertPos_);
-            }
-        });
-    }
-    preview_.setPositionSeconds(0.0);
+    preview_.setPositionSeconds(guideStartSeconds);
     emit ghostStateChanged();
     emit emptyCardChanged();
     emit guidePracticeChanged();
-    Q_UNUSED(wasActive);
+}
+
+void NoaCopilotModel::setGuidePracticePaused(bool paused)
+{
+    if (!guidePracticeActive_ || guidePracticePaused_ == paused) return;
+    guidePracticePaused_ = paused;
+    if (paused) guideStreamTimer_.stop();
+    else if (guideStage_ == 1) guideStreamTimer_.start();
+    emit ghostStateChanged();
 }
 
 void NoaCopilotModel::stopGuidePractice()
@@ -2655,7 +2659,7 @@ bool NoaCopilotModel::triggerGuideSymbol(const QString& symbol)
 
 bool NoaCopilotModel::handleGuideKey(int key)
 {
-    if (!guidePracticeActive_) return false;
+    if (!guidePracticeActive_ || guidePracticePaused_) return false;
     if (key != Qt::Key_Tab && key != Qt::Key_Down && key != Qt::Key_Up && key != Qt::Key_Right) {
         return false;
     }
@@ -2674,7 +2678,7 @@ bool NoaCopilotModel::handleGuideKey(int key)
             guideAcceptedBeats_ = 0;
             guideStage_ = 1;
             showGuideCandidate();
-            preview_.setPositionSeconds(2.4);
+            preview_.setPositionSeconds(guideStartSeconds);
             guideStreamTimer_.start();
             emit guidePracticeChanged();
             return true;
@@ -2699,7 +2703,7 @@ bool NoaCopilotModel::handleGuideKey(int key)
                 bridge->clearCandidateSnapshots(true);
             }
             guideStage_ = 8;
-            preview_.setPositionSeconds(2.4);
+            preview_.setPositionSeconds(guideStartSeconds);
             emit ghostStateChanged();
             emit guidePracticeChanged();
             return true;
@@ -2713,7 +2717,7 @@ bool NoaCopilotModel::handleGuideKey(int key)
             guideCandidate_ = 2;
             guideStage_ = 3;
             showGuideCandidate();
-            preview_.setPositionSeconds(2.4);
+            preview_.setPositionSeconds(guideStartSeconds);
             emit guidePracticeChanged();
             return true;
         }
@@ -2721,7 +2725,7 @@ bool NoaCopilotModel::handleGuideKey(int key)
             guideCandidate_ = 3;
             guideStage_ = 4;
             showGuideCandidate();
-            preview_.setPositionSeconds(2.4);
+            preview_.setPositionSeconds(guideStartSeconds);
             emit guidePracticeChanged();
             return true;
         }
@@ -2734,7 +2738,7 @@ bool NoaCopilotModel::handleGuideKey(int key)
             guideCandidate_ = 2;
             guideStage_ = 5;
             showGuideCandidate();
-            preview_.setPositionSeconds(2.4);
+            preview_.setPositionSeconds(guideStartSeconds);
             emit guidePracticeChanged();
             return true;
         }
@@ -2756,7 +2760,7 @@ bool NoaCopilotModel::handleGuideKey(int key)
             guideAcceptedBeats_ = (guideStage_ == 5) ? 1 : 2;
             guideStage_ = (guideStage_ == 5) ? 6 : 7;
             showGuideCandidate();
-            preview_.setPositionSeconds(guideAcceptedBeats_ == 1 ? 2.7 : 3.0);
+            preview_.setPositionSeconds(guideStartSeconds + guideAcceptedBeats_ * guideBeatSeconds);
             emit guidePracticeChanged();
             return true;
         }

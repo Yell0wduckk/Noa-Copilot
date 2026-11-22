@@ -76,7 +76,7 @@ AppDialog {
         root.activeNoaGuideStep = stepId
         root.currentPageIndex = root.pageIds.indexOf("noa_copilot")
         root.noaCopilotAdvancedExpanded = (stepId === "noa-prefs-environment")
-        if (!root.visible)
+        if (!root.visible || root.closing)
             root.open()
         Qt.callLater(root.applyNoaGuideScroll)
         noaGuideLayoutTimer.restart()
@@ -1151,7 +1151,7 @@ AppDialog {
                     }
 
                     PreferenceGroup {
-                        title: "智能续写与起稿"
+                        title: "续写与起稿"
                         first: true
 
                         PreferenceSwitch {

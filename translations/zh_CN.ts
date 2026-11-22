@@ -4876,8 +4876,12 @@ Error: %1</source>
         <translation>使用指引</translation>
     </message>
     <message id="guide.noa.continuation.title">
-        <source>NoaCopilot continuation</source>
-        <translation>NoaCopilot 智能续写</translation>
+        <source>NoaCopilot</source>
+        <translation>NoaCopilot</translation>
+    </message>
+    <message id="guide.noa.continuation.confirm_skip">
+        <source>Skip the continuation guide?</source>
+        <translation>确认跳过续写引导吗？</translation>
     </message>
     <message id="guide.noa.continuation.hint">
         <source>Click NoaCopilot in the status bar to check status or open settings.</source>

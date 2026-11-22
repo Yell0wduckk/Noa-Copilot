@@ -4876,8 +4876,12 @@ Error: %1</translation>
         <translation>Quick guide</translation>
     </message>
     <message id="guide.noa.continuation.title">
-        <source>NoaCopilot continuation</source>
-        <translation>NoaCopilot continuation</translation>
+        <source>NoaCopilot</source>
+        <translation>NoaCopilot</translation>
+    </message>
+    <message id="guide.noa.continuation.confirm_skip">
+        <source>Skip the continuation guide?</source>
+        <translation>Skip the continuation guide?</translation>
     </message>
     <message id="guide.noa.continuation.hint">
         <source>Click NoaCopilot in the status bar to check status or open settings.</source>

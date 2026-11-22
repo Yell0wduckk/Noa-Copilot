@@ -129,7 +129,7 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "NoaCopilot 智能制谱助手"
+                    text: "NoaCopilot"
                     font.family: Theme.uiFont
                     font.pixelSize: Theme.uiFontSize
                     font.weight: Font.DemiBold

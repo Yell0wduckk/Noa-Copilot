@@ -1466,9 +1466,11 @@ bool DocumentModel::beginGuidePracticeDocument()
         "&first=0\n"
         "&wholebpm=200\n"
         "&lv_5=14\n"
-        "&des_5=NoaCopilot\n"
+        "&des_5=\n"
         "&inote_5=\n"
-        "(200){16}2,3,4,5,7,5,6,4,8,7,6,5,2,4,1,5,\n"
+        "(200)\n"
+        "{4},,,,\n"
+        "{16}2,3,4,5,7,5,6,4,8,7,6,5,2,4,1,5,\n"
         "{48}2,,,3,,,4,,,5,,,68,,,5,,,4,,,3,,,8/2,,7,,6,,5,,4,,3,,2,,1,,8,,7,,6,,5,,\n");
     QFile tempFile(tempPath);
     if (!tempFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {

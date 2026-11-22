@@ -19,6 +19,7 @@ Popup {
     property int interactiveCompletedSteps: 0
     property int interactiveCurrentStepIndex: -1
     property var interactiveStepSequence: []
+    readonly property bool confirmingSkip: skipPracticeDialog.visible
     property real dragOffsetX: 0
     property real dragOffsetY: 0
     readonly property var selectedSection: sections[selectedIndex]
@@ -244,10 +245,29 @@ Popup {
     }
 
     function advance() {
-        if (lastStep)
+        if (interactiveWorkspace && interactiveCompletedSteps < interactiveStepSequence.length)
+            skipPracticeDialog.open()
+        else if (lastStep)
             close()
         else
             selectedIndex += 1
+    }
+
+    ChoiceDialog {
+        id: skipPracticeDialog
+        objectName: "skipPracticeDialog"
+        z: root.z + 1
+        title: "NoaCopilot"
+        message: qsTrId("guide.noa.continuation.confirm_skip")
+        choices: [
+            { id: "cancel", label: qsTrId("action.cancel"), role: "reject" },
+            { id: "skip", label: qsTrId("action.ok"), role: "accept" }
+        ]
+        dismissChoiceId: "cancel"
+        onChosen: choiceId => {
+            if (choiceId === "skip" && root.visible && root.interactiveWorkspace)
+                root.selectedIndex += 1
+        }
     }
 
     contentItem: Item {

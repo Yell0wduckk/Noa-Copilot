@@ -268,6 +268,7 @@ public:
     Q_INVOKABLE void dismissGhost();
     Q_INVOKABLE void dismissAllActivePreviews();
     Q_INVOKABLE void startGuidePractice();
+    Q_INVOKABLE void setGuidePracticePaused(bool paused);
     Q_INVOKABLE void stopGuidePractice();
     Q_INVOKABLE bool triggerGuideSymbol(const QString& symbol);
     bool guidePracticeActive() const { return guidePracticeActive_; }
@@ -495,6 +496,7 @@ private:
 
     // ---- Interactive Guide Practice State (silent, local, daemon-free) ----
     bool guidePracticeActive_ = false;
+    bool guidePracticePaused_ = false;
     int guideStage_ = 0;
     int guideCandidate_ = 0;
     int guideStreamBeat_ = 0;

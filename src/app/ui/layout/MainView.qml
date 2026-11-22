@@ -38,7 +38,8 @@ Item {
             ? baseTitle + " — " + documentSession.currentDifficultyLabel
             : baseTitle
     }
-    readonly property bool beginnerGuideActive: (beginnerGuide.visible && !beginnerGuide.interactiveWorkspace) || setupWizard.visible
+    readonly property bool beginnerGuideActive: (beginnerGuide.visible && !beginnerGuide.interactiveWorkspace)
+        || beginnerGuide.confirmingSkip || setupWizard.visible
     property bool noaGuideExpandedBottomPanel: false
     property bool noaGuidePreviousBottomPanel: true
     readonly property bool editorActive: state.hasActiveEditor && !pages.overlayActive
@@ -323,11 +324,10 @@ Item {
         }
     }
 
-    function syncNoaGuideHost() {
-        const sectionId = beginnerGuide.visible && beginnerGuide.selectedSection
-            ? beginnerGuide.selectedSection.id : ""
+    function syncNoaGuideHost(sectionId) {
         if (sectionId === "noa-continuation") {
             preferencesDialog.closeNoaGuide()
+            let started = false
             if (!root.documentSession.guidePracticeDocumentActive) {
                 root.noaGuidePreviousBottomPanel = state.bottomPanelVisible
                 if (!state.bottomPanelVisible) {
@@ -338,17 +338,26 @@ Item {
                     root.pages.ensureDifficultyPageActive(root.documentSession.currentDifficultyId)
                     state.activeSidebarView = "chart"
                     root.noaCopilot.startGuidePractice()
+                    started = true
                 }
+            } else if (root.noaCopilot) {
+                root.noaCopilot.setGuidePracticePaused(false)
             }
             Qt.callLater(() => {
-                if (beginnerGuide.visible && beginnerGuide.interactiveWorkspace) {
-                    splitView.sourceEditorItem.focusEditor()
+                if (beginnerGuide.hostSectionId === "noa-continuation") {
+                    if (started)
+                        splitView.sourceEditorItem.focusEditorAtEnd()
+                    else
+                        splitView.sourceEditorItem.focusEditor()
                     beginnerGuide.bumpLayout()
                 }
             })
             return
         }
-        root.leaveNoaGuidePractice()
+        if (!sectionId)
+            root.leaveNoaGuidePractice()
+        else if (root.noaCopilot && root.noaCopilot.guidePracticeActive)
+            root.noaCopilot.setGuidePracticePaused(true)
         if (sectionId === "noa-prefs-temperature" || sectionId === "noa-prefs-environment") {
             preferencesDialog.showNoaGuideStep(sectionId)
         } else {
@@ -754,10 +763,19 @@ Item {
             return -1
         }
         interactiveStepSequence: ["Tab", "↓", "↓", "↑", "→", "→", "Tab"]
-        onVisibleChanged: root.syncNoaGuideHost()
-        onSelectedIndexChanged: root.syncNoaGuideHost()
+        readonly property string hostSectionId: visible && selectedSection ? selectedSection.id : ""
+        onHostSectionIdChanged: root.syncNoaGuideHost(hostSectionId)
+        onConfirmingSkipChanged: {
+            if (hostSectionId === "noa-continuation" && root.noaCopilot) {
+                root.noaCopilot.setGuidePracticePaused(confirmingSkip)
+                if (!confirmingSkip)
+                    Qt.callLater(() => {
+                        if (beginnerGuide.hostSectionId === "noa-continuation" && !beginnerGuide.confirmingSkip)
+                            splitView.sourceEditorItem.focusEditor()
+                    })
+            }
+        }
         onClosed: {
-            root.syncNoaGuideHost()
             if (root.noaCopilot && !root.preferences.noaCopilotGuideCompleted)
                 root.preferences.completeNoaCopilotGuide()
         }
