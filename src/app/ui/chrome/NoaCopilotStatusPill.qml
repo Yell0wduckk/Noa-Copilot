@@ -319,15 +319,15 @@ Item {
                     }
 
                     LabeledSlider {
-                        label: "Slide 偏置"
-                        labelWidth: 68
-                        from: 0
+                        label: "slide出现概率"
+                        labelWidth: 94
+                        from: 1
                         to: 4
                         stepSize: 0.1
                         decimals: 1
-                        suffix: ""
-                        value: root.noaCopilot ? root.noaCopilot.slideBias : 0
-                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideBias = v }
+                        suffix: "x"
+                        value: root.noaCopilot ? root.noaCopilot.slideProbabilityMultiplier : 1
+                        onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideProbabilityMultiplier = v }
                     }
 
                     RowLayout {

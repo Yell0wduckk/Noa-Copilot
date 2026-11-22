@@ -1269,15 +1269,15 @@ AppDialog {
                                     onClicked: root.noaCopilot.saveAudioFeatures = checked
                                 }
                                 PreferenceSlider {
-                                    label: "Slide 偏置"
-                                    suffix: ""
+                                    label: "slide出现概率"
+                                    suffix: "x"
                                     enabled: root.noaCopilot ? root.noaCopilot.enabled : false
-                                    from: 0.0
+                                    from: 1.0
                                     to: 4.0
                                     stepSize: 0.1
                                     decimals: 1
-                                    value: root.noaCopilot ? root.noaCopilot.slideBias : 0.0
-                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideBias = v }
+                                    value: root.noaCopilot ? root.noaCopilot.slideProbabilityMultiplier : 1.0
+                                    onMoved: v => { if (root.noaCopilot) root.noaCopilot.slideProbabilityMultiplier = v }
                                 }
 
                                 RowLayout {

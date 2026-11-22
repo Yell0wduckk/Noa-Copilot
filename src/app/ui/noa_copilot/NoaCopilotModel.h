@@ -85,7 +85,7 @@ class NoaCopilotModel final : public QObject
     Q_PROPERTY(bool cudaAvailable READ cudaAvailable NOTIFY configChanged)
     Q_PROPERTY(QVariantList environments READ environments NOTIFY configChanged)
     // ---- Advanced Sampling & Runtime Controls ----
-    Q_PROPERTY(double slideBias READ slideBias WRITE setSlideBias NOTIFY configChanged)
+    Q_PROPERTY(double slideProbabilityMultiplier READ slideProbabilityMultiplier WRITE setSlideProbabilityMultiplier NOTIFY configChanged)
     Q_PROPERTY(int seed READ seed WRITE setSeed NOTIFY configChanged)
 
     Q_PROPERTY(QString pythonMode READ pythonMode WRITE setPythonMode NOTIFY configChanged)
@@ -167,8 +167,8 @@ public:
 
     double temperature() const { return temperature_; }
     void setTemperature(double value);
-    double slideBias() const { return slideBias_; }
-    void setSlideBias(double value);
+    double slideProbabilityMultiplier() const { return slideProbabilityMultiplier_; }
+    void setSlideProbabilityMultiplier(double value);
 
 
 
@@ -403,7 +403,7 @@ private:
     QString device_ = QStringLiteral("auto");
     QString precision_ = QStringLiteral("bf16");
     double temperature_ = 0.5;
-    double slideBias_ = 0.0;
+    double slideProbabilityMultiplier_ = 1.0;
     double continuationSecond_ = 0.0, continuationEndSecond_ = 0.0;
     int seed_ = -1;
     QString checkpointPath_;

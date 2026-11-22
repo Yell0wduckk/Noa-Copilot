@@ -304,7 +304,7 @@ void NoaCopilotModel::loadPreferences()
     device_ = sec.value(QStringLiteral("device")).toString(QStringLiteral("auto"));
     precision_ = sec.value(QStringLiteral("precision")).toString(QStringLiteral("bf16"));
     temperature_ = qBound(0.0, sec.value(QStringLiteral("temperature")).toDouble(0.5), 1.0);
-    slideBias_ = sec.value(QStringLiteral("slide_bias")).toDouble(0.0);
+    slideProbabilityMultiplier_ = qBound(1.0, sec.value(QStringLiteral("slide_probability_multiplier")).toDouble(1.0), 4.0);
     seed_ = sec.value(QStringLiteral("seed")).toInt(-1);
     checkpointPath_ = sec.value(QStringLiteral("checkpoint_path")).toString();
     checkpointDir_ = sec.value(QStringLiteral("checkpoint_dir")).toString();
@@ -347,7 +347,7 @@ void NoaCopilotModel::savePreferences() const
     sec.insert(QStringLiteral("device"), device_);
     sec.insert(QStringLiteral("precision"), precision_);
     sec.insert(QStringLiteral("temperature"), temperature_);
-    sec.insert(QStringLiteral("slide_bias"), slideBias_);
+    sec.insert(QStringLiteral("slide_probability_multiplier"), slideProbabilityMultiplier_);
     sec.insert(QStringLiteral("seed"), seed_);
     sec.insert(QStringLiteral("checkpoint_path"), checkpointPath_);
     sec.insert(QStringLiteral("checkpoint_dir"), checkpointDir_);
@@ -570,10 +570,11 @@ void NoaCopilotModel::setCudaPython(QString value)
     if (enabled_) restartDaemon();
 }
 
-void NoaCopilotModel::setSlideBias(double value)
+void NoaCopilotModel::setSlideProbabilityMultiplier(double value)
 {
-    if (qFuzzyCompare(slideBias_, value)) return;
-    slideBias_ = value;
+    value = qBound(1.0, value, 4.0);
+    if (qFuzzyCompare(slideProbabilityMultiplier_, value)) return;
+    slideProbabilityMultiplier_ = value;
     savePreferences();
     emit configChanged();
 }
@@ -1226,7 +1227,7 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("sel_end"), lastSelEnd_);
     if (mode == QStringLiteral("continue")) req.insert(QStringLiteral("continuation_lines"), continuationLines_);
     req.insert(QStringLiteral("temperature"), temperature_);
-    req.insert(QStringLiteral("slide_bias"), slideBias_);
+    req.insert(QStringLiteral("slide_probability_multiplier"), slideProbabilityMultiplier_);
     req.insert(QStringLiteral("seed"), seed_);
     if (mode == "continue") {
         if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge()))
