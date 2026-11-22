@@ -10,11 +10,17 @@ Popup {
     id: root
 
     required property var sections
+    property int startIndex: 0
     property int selectedIndex: 0
+    property int layoutRevision: 0
+    property bool openingRange: false
+    property string interactiveActiveKey: ""
     readonly property var selectedSection: sections[selectedIndex]
     readonly property rect spotlight: regionRect(selectedSection)
     readonly property bool usingFallback: !itemAvailable(selectedSection.target)
     readonly property bool lastStep: selectedIndex === sections.length - 1
+    readonly property int visibleStepNumber: selectedIndex - startIndex + 1
+    readonly property int visibleStepCount: Math.max(1, sections.length - startIndex)
     readonly property int iconSize: Theme.compactControlHeight
 
     parent: Overlay.overlay
@@ -29,9 +35,58 @@ Popup {
     closePolicy: Popup.CloseOnEscape
     z: 100
     background: Item {}
-    onAboutToShow: selectedIndex = 0
-    onOpened: nextButton.forceActiveFocus()
-    onSelectedIndexChanged: viewport.contentItem.contentY = 0
+    onAboutToShow: {
+        if (!openingRange) {
+            startIndex = 0
+            selectedIndex = 0
+        }
+        openingRange = false
+    }
+    onOpened: {
+        nextButton.forceActiveFocus()
+        bumpLayout()
+    }
+    onSelectedIndexChanged: {
+        viewport.contentItem.contentY = 0
+        if (visible)
+            nextButton.forceActiveFocus()
+        bumpLayout()
+    }
+
+    function openFromId(sectionId) {
+        let index = -1
+        for (let i = 0; i < sections.length; ++i) {
+            if (sections[i].id === sectionId) {
+                index = i
+                break
+            }
+        }
+        if (index < 0)
+            return
+        openingRange = true
+        startIndex = index
+        selectedIndex = index
+        open()
+    }
+
+    function bumpLayout() {
+        layoutRevision += 1
+    }
+
+    function dispatchSectionKey(event) {
+        if (!selectedSection || !selectedSection.keyHandler)
+            return false
+        if (event.modifiers !== Qt.NoModifier)
+            return false
+        if (event.key === Qt.Key_Tab || event.key === Qt.Key_Down
+                || event.key === Qt.Key_Up || event.key === Qt.Key_Right) {
+            if (selectedSection.keyHandler(event.key)) {
+                event.accepted = true
+                return true
+            }
+        }
+        return false
+    }
 
     function itemAvailable(item) {
         if (!item || item.Window.window !== root.parent.Window.window)
@@ -60,12 +115,15 @@ Popup {
     }
 
     function itemRect(item, heightLimit) {
-        if (!itemAvailable(item))
+        const rev = root.layoutRevision
+        if (rev < 0 || !itemAvailable(item))
             return Qt.rect(0, 0, 0, 0)
         // 读取祖先几何，使高亮跟随分栏、滚动和窗口缩放。
         for (let node = item; node; node = node.parent) {
             node.x
             node.y
+            node.width
+            node.height
         }
         const origin = item.mapToItem(surface, 0, 0)
         const focusHeight = heightLimit > 0 ? Math.min(item.height, heightLimit) : item.height
@@ -147,6 +205,8 @@ Popup {
     contentItem: Item {
         id: surface
         Accessible.name: qsTrId("guide.page_one")
+        Keys.onTabPressed: event => root.dispatchSectionKey(event)
+        Keys.onPressed: event => root.dispatchSectionKey(event)
 
         Rectangle {
             width: parent.width
@@ -198,7 +258,9 @@ Popup {
                 + bodyColumn.implicitHeight + footer.implicitHeight
                 + 2 * padding + 2 * Theme.dialogPadding
             readonly property var placement: root.placeCard(width, desiredHeight)
-            width: Math.min(320, surface.width - 2 * Theme.dialogMargin)
+            width: Math.min(root.selectedSection && root.selectedSection.cardWidth
+                ? root.selectedSection.cardWidth : 320,
+                surface.width - 2 * Theme.dialogMargin)
             height: placement.height
             x: placement.x
             y: placement.y
@@ -250,7 +312,7 @@ Popup {
                             color: Theme.colors.accent.primary
                             Text {
                                 anchors.centerIn: parent
-                                text: root.selectedIndex + 1
+                                text: root.visibleStepNumber
                                 color: Theme.colors.text.onAccent
                                 font.family: Theme.uiFont
                                 font.pixelSize: Theme.uiFontSize
@@ -270,6 +332,8 @@ Popup {
                             iconSource: Qt.resolvedUrl("icons/close.svg")
                             tooltip: qsTrId("guide.exit")
                             Accessible.name: tooltip
+                            Keys.onTabPressed: event => root.dispatchSectionKey(event)
+                            Keys.onPressed: event => root.dispatchSectionKey(event)
                             onClicked: root.close()
                         }
                     }
@@ -322,6 +386,10 @@ Popup {
                                     required property var modelData
                                     readonly property var icons: modelData.icons
                                         || (modelData.icon ? [modelData.icon] : [])
+                                    readonly property bool isKey: modelData.kind === "key"
+                                    readonly property bool activeKey: isKey
+                                        && root.interactiveActiveKey.length > 0
+                                        && root.interactiveActiveKey === (modelData.sample || "")
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     Layout.columnSpan: modelData.span || 1
@@ -333,8 +401,12 @@ Popup {
                                     Rectangle {
                                         anchors.fill: parent
                                         radius: Theme.controlRadius
-                                        color: Theme.colors.background.control
-                                        border.color: Theme.colors.border.normal
+                                        color: feature.activeKey
+                                            ? Theme.contentOverlayColor(Theme.colors.accent.primary, 0.14)
+                                            : Theme.colors.background.control
+                                        border.color: feature.activeKey
+                                            ? Theme.colors.accent.primary
+                                            : Theme.colors.border.normal
                                     }
                                     RowLayout {
                                         id: featureRow
@@ -346,8 +418,20 @@ Popup {
                                             visible: feature.icons.length > 0 || sample.visible
                                             Layout.preferredWidth: Math.max(root.iconSize,
                                                 featureIcons.implicitWidth,
-                                                sample.visible ? sample.implicitWidth : 0)
+                                                sample.visible ? sample.implicitWidth + (feature.isKey ? 12 : 0) : 0)
                                             Layout.preferredHeight: root.iconSize
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                visible: feature.isKey
+                                                radius: Theme.smallControlRadius
+                                                color: feature.activeKey
+                                                    ? Theme.colors.accent.primary
+                                                    : Theme.colors.background.elevated
+                                                border.width: 1
+                                                border.color: feature.activeKey
+                                                    ? Theme.colors.accent.primary
+                                                    : Theme.colors.border.normal
+                                            }
                                             Row {
                                                 id: featureIcons
                                                 anchors.centerIn: parent
@@ -369,9 +453,11 @@ Popup {
                                                 anchors.centerIn: parent
                                                 visible: feature.modelData.sample !== undefined
                                                 text: feature.modelData.sample || ""
-                                                color: feature.modelData.kind === "code"
-                                                    ? Theme.colors.syntax.duration : Theme.colors.text.active
-                                                font.family: feature.modelData.kind === "code"
+                                                color: feature.activeKey
+                                                    ? Theme.colors.text.onAccent
+                                                    : (feature.modelData.kind === "code"
+                                                        ? Theme.colors.syntax.duration : Theme.colors.text.active)
+                                                font.family: (feature.modelData.kind === "code" || feature.isKey)
                                                     ? Theme.codeFont.family : Theme.uiFont
                                                 font.pixelSize: Theme.uiFontSize
                                                 font.weight: Font.DemiBold
@@ -385,6 +471,12 @@ Popup {
                                             font.pixelSize: Theme.secondaryFontSize
                                             wrapMode: Text.Wrap
                                         }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        visible: feature.isKey && !!root.selectedSection.symbolHandler
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.selectedSection.symbolHandler(feature.modelData.sample || "")
                                     }
                                 }
                             }
@@ -407,13 +499,15 @@ Popup {
                     spacing: Theme.panelPadding
                     AppButton {
                         text: qsTrId("guide.previous")
-                        enabled: root.selectedIndex > 0
+                        enabled: root.selectedIndex > root.startIndex
+                        Keys.onTabPressed: event => root.dispatchSectionKey(event)
+                        Keys.onPressed: event => root.dispatchSectionKey(event)
                         onClicked: root.selectedIndex -= 1
                     }
                     Text {
                         Layout.fillWidth: true
                         text: qsTrId("guide.step_counter")
-                            .arg(root.selectedIndex + 1).arg(root.sections.length)
+                            .arg(root.visibleStepNumber).arg(root.visibleStepCount)
                         color: Theme.colors.text.secondary
                         font.family: Theme.uiFont
                         font.pixelSize: Theme.secondaryFontSize
@@ -423,6 +517,8 @@ Popup {
                         id: nextButton
                         text: root.lastStep ? qsTrId("guide.finish") : qsTrId("guide.next")
                         emphasized: true
+                        Keys.onTabPressed: event => root.dispatchSectionKey(event)
+                        Keys.onPressed: event => root.dispatchSectionKey(event)
                         onClicked: root.advance()
                     }
                 }

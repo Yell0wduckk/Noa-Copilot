@@ -11,6 +11,7 @@ Item {
     required property var noaCopilot
     property bool difficultyActive: false
     signal openPreferencesRequested()
+    signal openGuideRequested()
 
     implicitWidth: pillRow.implicitWidth + 12
     implicitHeight: 19
@@ -257,6 +258,18 @@ Item {
                 }
 
                 Item { Layout.fillWidth: true }
+
+                ChromeRow {
+                    implicitHeight: 24
+                    leftPadding: 8
+                    rightPadding: 8
+                    text: qsTrId("guide.noa.open_entry")
+                    labelFont: Qt.font({ family: Theme.uiFont, pixelSize: Theme.secondaryFontSize })
+                    onClicked: {
+                        statusPopup.close()
+                        root.openGuideRequested()
+                    }
+                }
 
                 ChromeRow {
                     implicitHeight: 24

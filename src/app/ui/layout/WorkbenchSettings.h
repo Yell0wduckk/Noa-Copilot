@@ -19,6 +19,7 @@ class WorkbenchSettings final : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(bool setupCompleted READ setupCompleted NOTIFY setupCompletedChanged)
+    Q_PROPERTY(bool noaCopilotGuideCompleted READ noaCopilotGuideCompleted NOTIFY noaCopilotGuideCompletedChanged)
     Q_PROPERTY(QString preferenceMigrationStatus READ preferenceMigrationStatus CONSTANT)
     Q_PROPERTY(bool efficientSidebarEnabled READ efficientSidebarEnabled WRITE setEfficientSidebarEnabled NOTIFY efficientSidebarEnabledChanged)
     Q_PROPERTY(bool sidebarVisible READ sidebarVisible WRITE setSidebarVisible NOTIFY sidebarVisibleChanged)
@@ -66,8 +67,10 @@ public:
     Q_INVOKABLE QVariantMap aboutInfo() const;
     explicit WorkbenchSettings(QObject* parent = nullptr);
     bool setupCompleted() const;
+    bool noaCopilotGuideCompleted() const;
     QString preferenceMigrationStatus() const;
     Q_INVOKABLE bool completeSetup();
+    Q_INVOKABLE bool completeNoaCopilotGuide();
 
     bool efficientSidebarEnabled() const;
     bool sidebarVisible() const;
@@ -137,6 +140,7 @@ public:
 
 signals:
     void setupCompletedChanged();
+    void noaCopilotGuideCompletedChanged();
     void efficientSidebarEnabledChanged();
     void sidebarVisibleChanged();
     void sidebarWidthChanged();

@@ -15,11 +15,72 @@ AppDialog {
     property var updateService: null
     property var noaCopilot: null
     property bool noaCopilotAdvancedExpanded: false
+    property bool guideMode: false
+    property bool savedNoaAdvancedExpanded: false
+    readonly property Item noaTemperatureGuideItem: noaTemperatureSlider
+    readonly property Item noaEnvironmentGuideItem: noaEnvironmentConfigBlock
 
     signal updateRequested()
     signal completionSettingsClosed()
+    signal noaGuideLayoutUpdated()
     property string requestedCompletionGroup: ""
     property bool returnToEditor: false
+
+    modal: !guideMode
+    focus: !guideMode
+    closePolicy: guideMode ? Popup.NoAutoClose : Popup.CloseOnEscape
+    z: guideMode ? 99 : 0
+
+    function scrollNoaGuideTarget(item, alignTop) {
+        const flickable = noaCopilotPage.contentItem as Flickable
+        if (!flickable || !item) {
+            root.noaGuideLayoutUpdated()
+            return
+        }
+        noaCopilotPage.ensurePolished()
+        flickable.ensurePolished()
+        const minimum = flickable.originY
+        const maximum = minimum + Math.max(0, flickable.contentHeight - flickable.height)
+        let target = minimum
+        if (!alignTop) {
+            const pos = item.mapToItem(flickable.contentItem, 0, 0)
+            target = Math.max(minimum, pos.y - 12)
+        }
+        flickable.contentY = Math.max(minimum, Math.min(target, maximum))
+        root.noaGuideLayoutUpdated()
+    }
+
+    function showNoaGuideStep(stepId) {
+        if (!root.guideMode) {
+            root.savedNoaAdvancedExpanded = root.noaCopilotAdvancedExpanded
+            root.guideMode = true
+        }
+        root.currentPageIndex = root.pageIds.indexOf("noa_copilot")
+        root.noaCopilotAdvancedExpanded = (stepId === "noa-prefs-environment")
+        if (!root.visible)
+            root.open()
+        const targetItem = stepId === "noa-prefs-environment"
+            ? noaEnvironmentConfigBlock
+            : noaTemperatureSlider
+        const alignTop = (stepId !== "noa-prefs-environment")
+        Qt.callLater(() => {
+            if (!root.guideMode || !root.visible)
+                return
+            root.scrollNoaGuideTarget(targetItem, alignTop)
+            Qt.callLater(() => {
+                if (root.guideMode && root.visible)
+                    root.scrollNoaGuideTarget(targetItem, alignTop)
+            })
+        })
+    }
+
+    function closeNoaGuide() {
+        if (!root.guideMode)
+            return
+        root.close()
+        root.noaCopilotAdvancedExpanded = root.savedNoaAdvancedExpanded
+        root.guideMode = false
+    }
 
     function openCompletionSettings(group) {
         root.requestedCompletionGroup = group
@@ -1054,6 +1115,7 @@ AppDialog {
                 }
 
                 PreferencePage {
+                    id: noaCopilotPage
                     objectName: "preferencesNoaCopilotPage"
 
                     FileDialog {
@@ -1142,6 +1204,7 @@ AppDialog {
                         }
 
                         NoaTemperatureSlider {
+                            id: noaTemperatureSlider
                             label: "采样温度"
                             labelWidth: root.settingsLabelWidth
                             controlEnabled: root.noaCopilot ? root.noaCopilot.enabled : false
@@ -1175,70 +1238,76 @@ AppDialog {
                             PreferenceGroup {
                                 title: "运行环境与推理源码"
 
-                                Repeater {
-                                    model: ["谱面分析环境", "音频特征推理环境"]
-                                    delegate: PreferenceCombo {
-                                        required property string modelData
-                                        required property int index
-                                        readonly property bool chart: index === 0
-                                        readonly property bool cpuReady: chart ? !!root.noaCopilot?.cpuAvailable : !!root.noaCopilot?.cpuMertAvailable
-                                        readonly property bool cudaReady: chart ? !!root.noaCopilot?.cudaAvailable : !!root.noaCopilot?.cudaMertAvailable
-                                        label: modelData
-                                        currentValue: (chart ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) ?? "cpu"
-                                        options: [
-                                            {value: "cpu", label: "CPU" + (cpuReady ? (chart ? "（推荐）" : "") : "（未就绪）")},
-                                            {value: "cuda", label: "CUDA" + (cudaReady ? (chart ? "" : "（推荐）") : "（未就绪）")}
-                                        ].filter(option => option.value === currentValue || (option.value === "cpu" ? cpuReady : cudaReady))
-                                        onPicked: value => {
-                                            if (chart) root.noaCopilot.device = value
-                                            else root.noaCopilot.mertDevice = value
-                                        }
-                                    }
-                                }
-                                Repeater {
-                                    model: ["CPU", "CUDA"]
-                                    delegate: RowLayout {
-                                        id: pathRow
-                                        required property string modelData
-                                        readonly property bool cpu: modelData === "CPU"
-                                        readonly property string path: (cpu ? root.noaCopilot?.cpuPython : root.noaCopilot?.cudaPython) ?? ""
-                                        readonly property var discovered: (root.noaCopilot?.environments ?? []).filter(
-                                            env => (cpu ? env.cpu : env.cuda) && env.path !== path)
-                                        function setPath(path) {
-                                            if (cpu) root.noaCopilot.cpuPython = path
-                                            else root.noaCopilot.cudaPython = path
-                                        }
-                                        Text { text: modelData + " 环境"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
-                                        AppTextField {
-                                            Layout.fillWidth: true
-                                            placeholderText: "python.exe 或 WSL /…/bin/python"
-                                            text: pathRow.path
-                                            onEditingFinished: {
-                                                pathRow.setPath(text)
-                                                text = Qt.binding(() => pathRow.path)
+                                ColumnLayout {
+                                    id: noaEnvironmentConfigBlock
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Repeater {
+                                        model: ["谱面分析环境", "音频特征推理环境"]
+                                        delegate: PreferenceCombo {
+                                            required property string modelData
+                                            required property int index
+                                            readonly property bool chart: index === 0
+                                            readonly property bool cpuReady: chart ? !!root.noaCopilot?.cpuAvailable : !!root.noaCopilot?.cpuMertAvailable
+                                            readonly property bool cudaReady: chart ? !!root.noaCopilot?.cudaAvailable : !!root.noaCopilot?.cudaMertAvailable
+                                            label: modelData
+                                            currentValue: (chart ? root.noaCopilot?.device : root.noaCopilot?.mertDevice) ?? "cpu"
+                                            options: [
+                                                {value: "cpu", label: "CPU" + (cpuReady ? (chart ? "（推荐）" : "") : "（未就绪）")},
+                                                {value: "cuda", label: "CUDA" + (cudaReady ? (chart ? "" : "（推荐）") : "（未就绪）")}
+                                            ].filter(option => option.value === currentValue || (option.value === "cpu" ? cpuReady : cudaReady))
+                                            onPicked: value => {
+                                                if (chart) root.noaCopilot.device = value
+                                                else root.noaCopilot.mertDevice = value
                                             }
                                         }
-                                        AppComboBox {
-                                            visible: pathRow.discovered.length > 0
-                                            model: pathRow.discovered
-                                            textRole: "path"
-                                            displayText: "已发现环境"
-                                            currentIndex: -1
-                                            Layout.preferredWidth: 120
-                                            onActivated: index => pathRow.setPath(model[index].path)
-                                        }
-                                        AppButton {
-                                            text: "浏览…"
-                                            onClicked: root.noaCopilot?.browseEnvironmentPython(parent.cpu)
+                                    }
+                                    Repeater {
+                                        model: ["CPU", "CUDA"]
+                                        delegate: RowLayout {
+                                            id: pathRow
+                                            required property string modelData
+                                            readonly property bool cpu: modelData === "CPU"
+                                            readonly property string path: (cpu ? root.noaCopilot?.cpuPython : root.noaCopilot?.cudaPython) ?? ""
+                                            readonly property var discovered: (root.noaCopilot?.environments ?? []).filter(
+                                                env => (cpu ? env.cpu : env.cuda) && env.path !== path)
+                                            function setPath(path) {
+                                                if (cpu) root.noaCopilot.cpuPython = path
+                                                else root.noaCopilot.cudaPython = path
+                                            }
+                                            Text { text: modelData + " 环境"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
+                                            AppTextField {
+                                                Layout.fillWidth: true
+                                                placeholderText: "python.exe 或 WSL /…/bin/python"
+                                                text: pathRow.path
+                                                onEditingFinished: {
+                                                    pathRow.setPath(text)
+                                                    text = Qt.binding(() => pathRow.path)
+                                                }
+                                            }
+                                            AppComboBox {
+                                                visible: pathRow.discovered.length > 0
+                                                model: pathRow.discovered
+                                                textRole: "path"
+                                                displayText: "已发现环境"
+                                                currentIndex: -1
+                                                Layout.preferredWidth: 120
+                                                onActivated: index => pathRow.setPath(model[index].path)
+                                            }
+                                            AppButton {
+                                                text: "浏览…"
+                                                onClicked: root.noaCopilot?.browseEnvironmentPython(parent.cpu)
+                                            }
                                         }
                                     }
+                                    RowLayout {
+                                        Text { text: "WSL 发行版"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
+                                        AppTextField { Layout.fillWidth: true; text: root.noaCopilot?.wslDistribution ?? ""; onEditingFinished: root.noaCopilot.wslDistribution=text }
+                                        AppButton { text: "扫描本机环境"; onClicked: root.noaCopilot.scanEnvironments() }
+                                    }
+                                    Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: root.noaCopilot?.environmentStatus ?? ""; visible: text.length > 0; color: Theme.colors.text.secondary }
                                 }
-                                RowLayout {
-                                    Text { text: "WSL 发行版"; Layout.preferredWidth: root.settingsLabelWidth; color: Theme.colors.text.secondary }
-                                    AppTextField { Layout.fillWidth: true; text: root.noaCopilot?.wslDistribution ?? ""; onEditingFinished: root.noaCopilot.wslDistribution=text }
-                                    AppButton { text: "扫描本机环境"; onClicked: root.noaCopilot.scanEnvironments() }
-                                }
-                                Text { Layout.fillWidth: true; wrapMode: Text.WrapAnywhere; text: root.noaCopilot?.environmentStatus ?? ""; visible: text.length > 0; color: Theme.colors.text.secondary }
                                 PreferenceCombo {
                                     label: "推理精度"
                                     options: root.noaCopilot?.precisionModeOptions ?? []

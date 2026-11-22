@@ -4871,6 +4871,134 @@ Error: %1</source>
         <source>Preferences: configure interface appearance and styling, the editor and shortcuts.</source>
         <translation>環境設定：画面の外観やスタイル、エディター、ショートカットを設定します。</translation>
     </message>
+    <message id="guide.noa.open_entry">
+        <source>Quick guide</source>
+        <translation>使い方ガイド</translation>
+    </message>
+    <message id="guide.noa.continuation.title">
+        <source>NoaCopilot continuation</source>
+        <translation>NoaCopilot 続き生成</translation>
+    </message>
+    <message id="guide.noa.continuation.hint">
+        <source>Click NoaCopilot in the status bar to check status or open settings.</source>
+        <translation>右下の NoaCopilot ステータスバーから状態確認や設定を開けます。</translation>
+    </message>
+    <message id="guide.noa.continuation.tab">
+        <source>Trigger continuation or accept the remaining candidate</source>
+        <translation>続き生成を開始 / 残りの候補を確定</translation>
+    </message>
+    <message id="guide.noa.continuation.down">
+        <source>Switch to the next candidate</source>
+        <translation>次の候補へ切り替え</translation>
+    </message>
+    <message id="guide.noa.continuation.up">
+        <source>Return to the previous candidate (or original chart on #1)</source>
+        <translation>前の候補へ戻る（先頭で押すと原譜へ戻る）</translation>
+    </message>
+    <message id="guide.noa.continuation.right">
+        <source>Accept one beat at a time</source>
+        <translation>候補を 1 拍ずつ確定</translation>
+    </message>
+    <message id="guide.noa.sandbox.header">
+        <source>NoaCopilot interactive practice (silent example)</source>
+        <translation>NoaCopilot インタラクティブ練習（無音サンプル）</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.ready">
+        <source>Ready · Press Tab</source>
+        <translation>待機中 · Tab を押す</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.streaming">
+        <source>Candidate 1 / 3 · Streaming...</source>
+        <translation>候補 1 / 3 · ストリーミング生成中...</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.candidate">
+        <source>Candidate %1 / 3</source>
+        <translation>候補 %1 / 3</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.stepped">
+        <source>Candidate %1 / 3 · %2 beat(s) accepted</source>
+        <translation>候補 %1 / 3 · %2 拍を確定済み</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.accepted">
+        <source>Accepted</source>
+        <translation>候補をすべて確定済み</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.tab_start">
+        <source>Press Tab to stream the first continuation candidate at the cursor.</source>
+        <translation>Tab キーを押してカーソル位置から最初の候補をストリーミング生成します。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.streaming">
+        <source>Streaming candidate 1 beat by beat...</source>
+        <translation>候補 1 を 1 拍ずつストリーミング生成しています...</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.down_1">
+        <source>Press ↓ to switch to candidate 2.</source>
+        <translation>↓ キーを押して候補 2 に切り替えます。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.down_2">
+        <source>Press ↓ again to inspect candidate 3.</source>
+        <translation>もう一度 ↓ キーを押して候補 3 を確認します。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.up">
+        <source>Press ↑ to return to candidate 2.</source>
+        <translation>↑ キーを押して候補 2 に戻ります。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.right_1">
+        <source>Press → to accept the first beat ({12}24,3,3,).</source>
+        <translation>→ キーを押して最初の 1 拍（{12}24,3,3,）を確定します。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.right_2">
+        <source>Press → again to accept the second beat (64,5,5,).</source>
+        <translation>もう一度 → キーを押して 2 拍目（64,5,5,）を確定します。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.tab_accept">
+        <source>Press Tab to apply the rest of candidate 2.</source>
+        <translation>Tab キーを押して残りの候補をすべて適用します。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.done">
+        <source>Practice complete! Click Next to continue to NoaCopilot settings.</source>
+        <translation>練習が完了しました！「次へ」を押して設定ガイドへ進みます。</translation>
+    </message>
+    <message id="guide.noa.sandbox.toast.wait_stream">
+        <source>Still streaming candidate 1, please wait...</source>
+        <translation>候補 1 を生成中です。しばらくお待ちください...</translation>
+    </message>
+    <message id="guide.noa.sandbox.toast.expected">
+        <source>Follow the highlight: press %1</source>
+        <translation>ハイライト中のキーを押してください：%1</translation>
+    </message>
+    <message id="guide.noa.temperature.title">
+        <source>Sampling temperature</source>
+        <translation>サンプリング温度</translation>
+    </message>
+    <message id="guide.noa.temperature.hint">
+        <source>Open Preferences → NoaCopilot to adjust sampling temperature.</source>
+        <translation>「環境設定 → NoaCopilot」からサンプリング温度を調整できます。</translation>
+    </message>
+    <message id="guide.noa.temperature.range">
+        <source>Lower temperature produces safer, conventional patterns; higher temperature yields more varied and creative charts.</source>
+        <translation>温度を下げると安定した定番配置に、上げると変化に富んだ配置になります。</translation>
+    </message>
+    <message id="guide.noa.temperature.quick">
+        <source>You can also adjust sampling temperature anytime from the NoaCopilot status bar popup.</source>
+        <translation>普段の作業中は右下の NoaCopilot ステータスバーからも素早く調整できます。</translation>
+    </message>
+    <message id="guide.noa.environment.title">
+        <source>Runtime environment</source>
+        <translation>実行環境の設定</translation>
+    </message>
+    <message id="guide.noa.environment.hint">
+        <source>Expand Advanced settings in Preferences → NoaCopilot to configure CPU and CUDA environments.</source>
+        <translation>「環境設定 → NoaCopilot → 詳細設定」から CPU / CUDA 環境を設定できます。</translation>
+    </message>
+    <message id="guide.noa.environment.devices">
+        <source>Chart decoding is recommended on CPU for low latency; audio feature extraction (MERT) is recommended on CUDA when a GPU is available.</source>
+        <translation>譜面解析は低遅延な CPU を推奨、音声特徴抽出（MERT）は GPU があれば CUDA を推奨します。</translation>
+    </message>
+    <message id="guide.noa.environment.paths">
+        <source>Full builds bundle a CPU environment. For lightweight builds or CUDA acceleration (Windows / WSL Python), use Scan or Browse here.</source>
+        <translation>フル版は CPU 環境を同梱しています。軽量版や CUDA（Windows / WSL Python）は「スキャン」または「参照…」から指定できます。</translation>
+    </message>
     <message id="preferences.completion.customize">
         <source>Custom candidates</source>
         <translation>候補のカスタマイズ</translation>

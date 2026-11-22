@@ -17,9 +17,11 @@ Rectangle {
     property bool updateAvailable: false
     property string updateVersion: ""
     property var noaCopilot: null
+    readonly property Item noaCopilotPillItem: noaCopilotPill
 
     signal updateActivated()
     signal noaCopilotPreferencesRequested()
+    signal noaCopilotGuideRequested()
 
     implicitHeight: 23
     color: Theme.surfaceColor(Theme.colors.background.statusBar)
@@ -82,10 +84,12 @@ Rectangle {
             Layout.preferredWidth: implicitWidth
         }
         NoaCopilotStatusPill {
+            id: noaCopilotPill
             noaCopilot: root.noaCopilot
             difficultyActive: root.difficultyActive
             visible: root.noaCopilot !== null
             onOpenPreferencesRequested: root.noaCopilotPreferencesRequested()
+            onOpenGuideRequested: root.noaCopilotGuideRequested()
         }
     }
 

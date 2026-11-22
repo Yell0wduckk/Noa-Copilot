@@ -4871,6 +4871,134 @@ Error: %1</source>
         <source>Preferences: configure interface appearance and styling, the editor and shortcuts.</source>
         <translation>首选项：设置界面外观、样式，编辑器与快捷键。</translation>
     </message>
+    <message id="guide.noa.open_entry">
+        <source>Quick guide</source>
+        <translation>使用指引</translation>
+    </message>
+    <message id="guide.noa.continuation.title">
+        <source>NoaCopilot continuation</source>
+        <translation>NoaCopilot 智能续写</translation>
+    </message>
+    <message id="guide.noa.continuation.hint">
+        <source>Click NoaCopilot in the status bar to check status or open settings.</source>
+        <translation>随时可点击右下角 NoaCopilot 状态栏查看状态或打开设置。</translation>
+    </message>
+    <message id="guide.noa.continuation.tab">
+        <source>Trigger continuation or accept the remaining candidate</source>
+        <translation>发起续写 / 采纳剩余整段候选</translation>
+    </message>
+    <message id="guide.noa.continuation.down">
+        <source>Switch to the next candidate</source>
+        <translation>切换下一条候选</translation>
+    </message>
+    <message id="guide.noa.continuation.up">
+        <source>Return to the previous candidate (or original chart on #1)</source>
+        <translation>回到上一条候选（首条再按退回原谱）</translation>
+    </message>
+    <message id="guide.noa.continuation.right">
+        <source>Accept one beat at a time</source>
+        <translation>逐拍采纳当前候选</translation>
+    </message>
+    <message id="guide.noa.sandbox.header">
+        <source>NoaCopilot interactive practice (silent example)</source>
+        <translation>NoaCopilot 续写互动演练（无音频示例）</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.ready">
+        <source>Ready · Press Tab</source>
+        <translation>等待按 Tab 续写</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.streaming">
+        <source>Candidate 1 / 3 · Streaming...</source>
+        <translation>候选 1 / 3 · 正在流式生成...</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.candidate">
+        <source>Candidate %1 / 3</source>
+        <translation>候选 %1 / 3</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.stepped">
+        <source>Candidate %1 / 3 · %2 beat(s) accepted</source>
+        <translation>候选 %1 / 3 · 已步进采纳 %2 拍</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.accepted">
+        <source>Accepted</source>
+        <translation>已采纳整段候选</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.tab_start">
+        <source>Press Tab to stream the first continuation candidate at the cursor.</source>
+        <translation>按 Tab 在光标处流式生成第一组续写候选。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.streaming">
+        <source>Streaming candidate 1 beat by beat...</source>
+        <translation>正在逐拍流式生成第 1 组候选，请稍候...</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.down_1">
+        <source>Press ↓ to switch to candidate 2.</source>
+        <translation>按 ↓ 切换到第 2 组候选。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.down_2">
+        <source>Press ↓ again to inspect candidate 3.</source>
+        <translation>再按 ↓ 查看第 3 组候选。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.up">
+        <source>Press ↑ to return to candidate 2.</source>
+        <translation>按 ↑ 切换回第 2 组候选。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.right_1">
+        <source>Press → to accept the first beat ({12}24,3,3,).</source>
+        <translation>按 → 步进采纳第 1 拍（{12}24,3,3,）。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.right_2">
+        <source>Press → again to accept the second beat (64,5,5,).</source>
+        <translation>再按一次 → 步进采纳第 2 拍（64,5,5,）。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.tab_accept">
+        <source>Press Tab to apply the rest of candidate 2.</source>
+        <translation>按 Tab 采纳剩余整段候选（实际写谱时按 Esc 可保留已采纳拍退出）。</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.done">
+        <source>Practice complete! Click Next to continue to NoaCopilot settings.</source>
+        <translation>续写操作演练已完成！点击「下一步」了解温度与环境配置。</translation>
+    </message>
+    <message id="guide.noa.sandbox.toast.wait_stream">
+        <source>Still streaming candidate 1, please wait...</source>
+        <translation>当前候选仍在流式生成，请稍等...</translation>
+    </message>
+    <message id="guide.noa.sandbox.toast.expected">
+        <source>Follow the highlight: press %1</source>
+        <translation>请按当前高亮按键：%1</translation>
+    </message>
+    <message id="guide.noa.temperature.title">
+        <source>Sampling temperature</source>
+        <translation>采样温度</translation>
+    </message>
+    <message id="guide.noa.temperature.hint">
+        <source>Open Preferences → NoaCopilot to adjust sampling temperature.</source>
+        <translation>可在「首选项 → NoaCopilot」中调整采样温度。</translation>
+    </message>
+    <message id="guide.noa.temperature.range">
+        <source>Lower temperature produces safer, conventional patterns; higher temperature yields more varied and creative charts.</source>
+        <translation>低温更稳健保守、贴合常见配置；高温变化更丰富、更具创意。</translation>
+    </message>
+    <message id="guide.noa.temperature.quick">
+        <source>You can also adjust sampling temperature anytime from the NoaCopilot status bar popup.</source>
+        <translation>日常写谱时也可随时在右下角 NoaCopilot 状态栏快捷调节。</translation>
+    </message>
+    <message id="guide.noa.environment.title">
+        <source>Runtime environment</source>
+        <translation>运行环境配置</translation>
+    </message>
+    <message id="guide.noa.environment.hint">
+        <source>Expand Advanced settings in Preferences → NoaCopilot to configure CPU and CUDA environments.</source>
+        <translation>可在「首选项 → NoaCopilot → 高级设置」中配置 CPU 与 CUDA 环境。</translation>
+    </message>
+    <message id="guide.noa.environment.devices">
+        <source>Chart decoding is recommended on CPU for low latency; audio feature extraction (MERT) is recommended on CUDA when a GPU is available.</source>
+        <translation>谱面分析推荐 CPU（低延迟）；音频特征提取（MERT）有独显推荐 CUDA（首次分析大幅提速）。</translation>
+    </message>
+    <message id="guide.noa.environment.paths">
+        <source>Full builds bundle a CPU environment. For lightweight builds or CUDA acceleration (Windows / WSL Python), use Scan or Browse here.</source>
+        <translation>完整包内置 CPU 环境；轻量包或启用 CUDA（支持 Windows / WSL Python）可在此「扫描本机环境」或「浏览…」指定。</translation>
+    </message>
     <message id="preferences.completion.customize">
         <source>Custom candidates</source>
         <translation>自定义候选</translation>

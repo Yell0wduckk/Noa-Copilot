@@ -304,12 +304,42 @@ Item {
         root.hostWindow.close()
     }
 
+    function openNoaCopilotGuide() {
+        if (!root.noaCopilot)
+            return
+        beginnerGuide.openFromId("noa-continuation")
+    }
+
+    function syncNoaGuideHost() {
+        const sectionId = beginnerGuide.visible && beginnerGuide.selectedSection
+            ? beginnerGuide.selectedSection.id : ""
+        if (sectionId === "noa-continuation") {
+            preferencesDialog.closeNoaGuide()
+            if (!noaGuideSandbox.visible)
+                noaGuideSandbox.open()
+            Qt.callLater(() => {
+                if (beginnerGuide.visible)
+                    beginnerGuide.bumpLayout()
+            })
+            return
+        }
+        if (noaGuideSandbox.visible)
+            noaGuideSandbox.close()
+        if (sectionId === "noa-prefs-temperature" || sectionId === "noa-prefs-environment") {
+            preferencesDialog.showNoaGuideStep(sectionId)
+        } else {
+            preferencesDialog.closeNoaGuide()
+        }
+    }
+
     Component.onCompleted: {
         state.sidebarVisible = root.preferences.sidebarVisible
         state.bottomPanelVisible = root.preferences.bottomPanelVisible
         state.resetEditorTabs(root.documentSession.currentDifficultyId)
         if (!root.preferences.setupCompleted)
             Qt.callLater(setupWizard.open)
+        else if (root.noaCopilot && !root.preferences.noaCopilotGuideCompleted)
+            Qt.callLater(root.openNoaCopilotGuide)
     }
 
     onCompactChanged: state.compactPanel = ""
@@ -475,6 +505,7 @@ Item {
             onUpdateActivated: updatePrompt.present()
             noaCopilot: root.noaCopilot
             onNoaCopilotPreferencesRequested: preferencesDialog.openPage("noa_copilot")
+            onNoaCopilotGuideRequested: root.openNoaCopilotGuide()
         }
     }
 
@@ -676,9 +707,25 @@ Item {
         onFinished: beginnerGuide.open()
     }
 
+    NoaCopilotGuideSandbox {
+        id: noaGuideSandbox
+        objectName: "noaCopilotGuideSandbox"
+    }
+
     BeginnerGuideOverlay {
         id: beginnerGuide
         objectName: "beginnerGuideOverlay"
+        interactiveActiveKey: beginnerGuide.visible
+            && beginnerGuide.selectedSection
+            && beginnerGuide.selectedSection.id === "noa-continuation"
+            ? noaGuideSandbox.expectedKey : ""
+        onVisibleChanged: root.syncNoaGuideHost()
+        onSelectedIndexChanged: root.syncNoaGuideHost()
+        onClosed: {
+            root.syncNoaGuideHost()
+            if (root.noaCopilot && !root.preferences.noaCopilotGuideCompleted)
+                root.preferences.completeNoaCopilotGuide()
+        }
         sections: [
             {
                 id: "document-actions",
@@ -811,7 +858,55 @@ Item {
                 placement: "right",
                 alignment: "end"
             }
-        ])
+        ]).concat(root.noaCopilot ? [
+            {
+                id: "noa-continuation",
+                target: noaGuideSandbox.guideTargetItem,
+                fallbackTarget: statusBar.noaCopilotPillItem,
+                hint: qsTrId("guide.noa.continuation.hint"),
+                title: qsTrId("guide.noa.continuation.title"),
+                cardWidth: 440,
+                columns: 2,
+                keyHandler: key => noaGuideSandbox.handleKey(key),
+                symbolHandler: symbol => noaGuideSandbox.triggerSymbol(symbol),
+                features: [
+                    { kind: "key", sample: "Tab", label: qsTrId("guide.noa.continuation.tab") },
+                    { kind: "key", sample: "↓", label: qsTrId("guide.noa.continuation.down") },
+                    { kind: "key", sample: "↑", label: qsTrId("guide.noa.continuation.up") },
+                    { kind: "key", sample: "→", label: qsTrId("guide.noa.continuation.right") }
+                ],
+                placement: "below",
+                alignment: "start"
+            },
+            {
+                id: "noa-prefs-temperature",
+                target: preferencesDialog.noaTemperatureGuideItem,
+                fallbackTarget: statusBar.noaCopilotPillItem,
+                hint: qsTrId("guide.noa.temperature.hint"),
+                title: qsTrId("guide.noa.temperature.title"),
+                columns: 1,
+                features: [
+                    { icon: Qt.resolvedUrl("icons/sliders-horizontal.svg"), label: qsTrId("guide.noa.temperature.range") },
+                    { icon: Qt.resolvedUrl("icons/settings.svg"), label: qsTrId("guide.noa.temperature.quick") }
+                ],
+                placement: "below",
+                alignment: "start"
+            },
+            {
+                id: "noa-prefs-environment",
+                target: preferencesDialog.noaEnvironmentGuideItem,
+                fallbackTarget: statusBar.noaCopilotPillItem,
+                hint: qsTrId("guide.noa.environment.hint"),
+                title: qsTrId("guide.noa.environment.title"),
+                columns: 1,
+                features: [
+                    { icon: Qt.resolvedUrl("icons/tools.svg"), label: qsTrId("guide.noa.environment.devices") },
+                    { icon: Qt.resolvedUrl("icons/folder-open.svg"), label: qsTrId("guide.noa.environment.paths") }
+                ],
+                placement: "below",
+                alignment: "start"
+            }
+        ] : [])
     }
 
     // Input-heavy media tools keep their own dialogs; the launcher is a submenu.
@@ -868,6 +963,7 @@ Item {
         updateService: root.updates
         noaCopilot: root.noaCopilot
         onUpdateRequested: updatePrompt.present()
+        onNoaGuideLayoutUpdated: beginnerGuide.bumpLayout()
     }
 
     Connections {

@@ -4871,6 +4871,134 @@ Error: %1</translation>
         <source>Preferences: configure interface appearance and styling, the editor and shortcuts.</source>
         <translation>Preferences: configure interface appearance and styling, the editor and shortcuts.</translation>
     </message>
+    <message id="guide.noa.open_entry">
+        <source>Quick guide</source>
+        <translation>Quick guide</translation>
+    </message>
+    <message id="guide.noa.continuation.title">
+        <source>NoaCopilot continuation</source>
+        <translation>NoaCopilot continuation</translation>
+    </message>
+    <message id="guide.noa.continuation.hint">
+        <source>Click NoaCopilot in the status bar to check status or open settings.</source>
+        <translation>Click NoaCopilot in the status bar to check status or open settings.</translation>
+    </message>
+    <message id="guide.noa.continuation.tab">
+        <source>Trigger continuation or accept the remaining candidate</source>
+        <translation>Trigger continuation or accept the remaining candidate</translation>
+    </message>
+    <message id="guide.noa.continuation.down">
+        <source>Switch to the next candidate</source>
+        <translation>Switch to the next candidate</translation>
+    </message>
+    <message id="guide.noa.continuation.up">
+        <source>Return to the previous candidate (or original chart on #1)</source>
+        <translation>Return to the previous candidate (or original chart on #1)</translation>
+    </message>
+    <message id="guide.noa.continuation.right">
+        <source>Accept one beat at a time</source>
+        <translation>Accept one beat at a time</translation>
+    </message>
+    <message id="guide.noa.sandbox.header">
+        <source>NoaCopilot interactive practice (silent example)</source>
+        <translation>NoaCopilot interactive practice (silent example)</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.ready">
+        <source>Ready · Press Tab</source>
+        <translation>Ready · Press Tab</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.streaming">
+        <source>Candidate 1 / 3 · Streaming...</source>
+        <translation>Candidate 1 / 3 · Streaming...</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.candidate">
+        <source>Candidate %1 / 3</source>
+        <translation>Candidate %1 / 3</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.stepped">
+        <source>Candidate %1 / 3 · %2 beat(s) accepted</source>
+        <translation>Candidate %1 / 3 · %2 beat(s) accepted</translation>
+    </message>
+    <message id="guide.noa.sandbox.status.accepted">
+        <source>Accepted</source>
+        <translation>Accepted</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.tab_start">
+        <source>Press Tab to stream the first continuation candidate at the cursor.</source>
+        <translation>Press Tab to stream the first continuation candidate at the cursor.</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.streaming">
+        <source>Streaming candidate 1 beat by beat...</source>
+        <translation>Streaming candidate 1 beat by beat...</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.down_1">
+        <source>Press ↓ to switch to candidate 2.</source>
+        <translation>Press ↓ to switch to candidate 2.</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.down_2">
+        <source>Press ↓ again to inspect candidate 3.</source>
+        <translation>Press ↓ again to inspect candidate 3.</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.up">
+        <source>Press ↑ to return to candidate 2.</source>
+        <translation>Press ↑ to return to candidate 2.</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.right_1">
+        <source>Press → to accept the first beat ({12}24,3,3,).</source>
+        <translation>Press → to accept the first beat ({12}24,3,3,).</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.right_2">
+        <source>Press → again to accept the second beat (64,5,5,).</source>
+        <translation>Press → again to accept the second beat (64,5,5,).</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.tab_accept">
+        <source>Press Tab to apply the rest of candidate 2.</source>
+        <translation>Press Tab to apply the rest of candidate 2.</translation>
+    </message>
+    <message id="guide.noa.sandbox.prompt.done">
+        <source>Practice complete! Click Next to continue to NoaCopilot settings.</source>
+        <translation>Practice complete! Click Next to continue to NoaCopilot settings.</translation>
+    </message>
+    <message id="guide.noa.sandbox.toast.wait_stream">
+        <source>Still streaming candidate 1, please wait...</source>
+        <translation>Still streaming candidate 1, please wait...</translation>
+    </message>
+    <message id="guide.noa.sandbox.toast.expected">
+        <source>Follow the highlight: press %1</source>
+        <translation>Follow the highlight: press %1</translation>
+    </message>
+    <message id="guide.noa.temperature.title">
+        <source>Sampling temperature</source>
+        <translation>Sampling temperature</translation>
+    </message>
+    <message id="guide.noa.temperature.hint">
+        <source>Open Preferences → NoaCopilot to adjust sampling temperature.</source>
+        <translation>Open Preferences → NoaCopilot to adjust sampling temperature.</translation>
+    </message>
+    <message id="guide.noa.temperature.range">
+        <source>Lower temperature produces safer, conventional patterns; higher temperature yields more varied and creative charts.</source>
+        <translation>Lower temperature produces safer, conventional patterns; higher temperature yields more varied and creative charts.</translation>
+    </message>
+    <message id="guide.noa.temperature.quick">
+        <source>You can also adjust sampling temperature anytime from the NoaCopilot status bar popup.</source>
+        <translation>You can also adjust sampling temperature anytime from the NoaCopilot status bar popup.</translation>
+    </message>
+    <message id="guide.noa.environment.title">
+        <source>Runtime environment</source>
+        <translation>Runtime environment</translation>
+    </message>
+    <message id="guide.noa.environment.hint">
+        <source>Expand Advanced settings in Preferences → NoaCopilot to configure CPU and CUDA environments.</source>
+        <translation>Expand Advanced settings in Preferences → NoaCopilot to configure CPU and CUDA environments.</translation>
+    </message>
+    <message id="guide.noa.environment.devices">
+        <source>Chart decoding is recommended on CPU for low latency; audio feature extraction (MERT) is recommended on CUDA when a GPU is available.</source>
+        <translation>Chart decoding is recommended on CPU for low latency; audio feature extraction (MERT) is recommended on CUDA when a GPU is available.</translation>
+    </message>
+    <message id="guide.noa.environment.paths">
+        <source>Full builds bundle a CPU environment. For lightweight builds or CUDA acceleration (Windows / WSL Python), use Scan or Browse here.</source>
+        <translation>Full builds bundle a CPU environment. For lightweight builds or CUDA acceleration (Windows / WSL Python), use Scan or Browse here.</translation>
+    </message>
     <message id="preferences.completion.customize">
         <source>Custom candidates</source>
         <translation>Custom candidates</translation>

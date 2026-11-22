@@ -178,6 +178,11 @@ bool WorkbenchSettings::setupCompleted() const
     return loadUiObject().value(QStringLiteral("setup_completed")).toBool(false);
 }
 
+bool WorkbenchSettings::noaCopilotGuideCompleted() const
+{
+    return loadUiObject().value(QStringLiteral("noa_copilot_guide_completed")).toBool(false);
+}
+
 QString WorkbenchSettings::preferenceMigrationStatus() const
 {
     return PreferenceDocument::migrationStatus();
@@ -195,6 +200,24 @@ bool WorkbenchSettings::completeSetup()
         return false;
     }
     emit setupCompletedChanged();
+    return true;
+}
+
+bool WorkbenchSettings::completeNoaCopilotGuide()
+{
+    const QJsonObject previous = PreferenceDocument::loadPreferencesObject();
+    QJsonObject root = previous;
+    QJsonObject ui = root.value(QLatin1String(kUiSection)).toObject();
+    if (ui.value(QStringLiteral("noa_copilot_guide_completed")).toBool(false)) {
+        return true;
+    }
+    ui.insert(QStringLiteral("noa_copilot_guide_completed"), true);
+    root.insert(QLatin1String(kUiSection), ui);
+    if (!PreferenceDocument::savePreferencesObject(root)) {
+        PreferenceDocument::savePreferencesObject(previous);
+        return false;
+    }
+    emit noaCopilotGuideCompletedChanged();
     return true;
 }
 
