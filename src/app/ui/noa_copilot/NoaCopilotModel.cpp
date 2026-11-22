@@ -2846,10 +2846,10 @@ double NoaCopilotModel::parseLevelNumeric(const QString& levelText) const
     if (!ok || val <= 0.0) {
         return 13.0;
     }
-    if (hasPlus && qFloor(val) == val) {
-        val += 0.7;
+    if (!cleaned.contains(QLatin1Char('.')) && qFloor(val) == val) {
+        val += hasPlus ? 0.8 : 0.3;
     }
-    return qBound(1.0, val, 15.0);
+    return qBound(1.0, val, 15.9);
 }
 
 QString NoaCopilotModel::effectiveDesigner(const QString& overrideDesigner) const
