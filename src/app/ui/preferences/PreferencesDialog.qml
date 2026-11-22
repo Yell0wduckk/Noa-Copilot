@@ -213,6 +213,7 @@ AppDialog {
         id: countRow
         required property string label
         required property string setting
+        required property string unit
         required property int defaultValue
         property int maximum: 64
         readonly property int value: root.noaCopilot?.[setting] ?? defaultValue
@@ -231,8 +232,15 @@ AppDialog {
             Layout.minimumWidth: 0
         }
         AppTextField {
-            Layout.fillWidth: true
-            Layout.minimumWidth: implicitHeight * 1.8
+            id: countInput
+            TextMetrics {
+                id: threeDigits
+                font: countInput.font
+                text: "888"
+            }
+            Layout.preferredWidth: Math.ceil(threeDigits.advanceWidth) + leftPadding + rightPadding + 2
+            Layout.minimumWidth: Layout.preferredWidth
+            Layout.maximumWidth: Layout.preferredWidth
             Accessible.name: countRow.label
             horizontalAlignment: TextInput.AlignHCenter
             inputMethodHints: Qt.ImhDigitsOnly
@@ -248,6 +256,12 @@ AppDialog {
                     text = Qt.binding(() => String(countRow.value))
             }
         }
+        Text {
+            text: countRow.unit
+            font: countInput.font
+            color: Theme.colors.text.secondary
+        }
+        Item { Layout.fillWidth: true }
     }
 
     component PreferenceSwitch: AppSwitch {
@@ -1123,8 +1137,8 @@ AppDialog {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: Theme.settingsRowSpacing * 2
-                            NoaCountField { label: "续写行数"; setting: "continuationLines"; defaultValue: 4 }
-                            NoaCountField { label: "每行拍数"; setting: "lineAlignBeats"; defaultValue: 4 }
+                            NoaCountField { label: "续写行数"; unit: "行"; setting: "continuationLines"; defaultValue: 4 }
+                            NoaCountField { label: "每行拍数"; unit: "拍"; setting: "lineAlignBeats"; defaultValue: 4 }
                         }
 
                         NoaTemperatureSlider {
@@ -1283,8 +1297,8 @@ AppDialog {
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: Theme.settingsRowSpacing * 2
-                                    NoaCountField { label: "预计算序列数量"; setting: "candidateCount"; defaultValue: 3; maximum: 8 }
-                                    NoaCountField { label: "CPU 推理线程"; setting: "cpuThreads"; defaultValue: 4 }
+                                    NoaCountField { label: "预计算序列数量"; unit: "条"; setting: "candidateCount"; defaultValue: 3; maximum: 8 }
+                                    NoaCountField { label: "CPU 推理线程"; unit: "个"; setting: "cpuThreads"; defaultValue: 4 }
                                 }
                                 PreferenceSlider {
                                     label: "slide出现概率"
