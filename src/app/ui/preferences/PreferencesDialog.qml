@@ -209,6 +209,47 @@ AppDialog {
         labelWidth: root.settingsLabelWidth
     }
 
+    component NoaCountField: RowLayout {
+        id: countRow
+        required property string label
+        required property string setting
+        required property int defaultValue
+        property int maximum: 64
+        readonly property int value: root.noaCopilot?.[setting] ?? defaultValue
+
+        Layout.fillWidth: true
+        Layout.preferredWidth: 0
+        Layout.minimumHeight: root.settingsRowHeight
+        enabled: !!root.noaCopilot
+        Text {
+            text: countRow.label
+            color: Theme.colors.text.secondary
+            font.family: Theme.uiFont
+            font.pixelSize: Theme.uiFontSize
+            wrapMode: Text.WordWrap
+            Layout.preferredWidth: root.settingsLabelWidth
+            Layout.minimumWidth: 0
+        }
+        AppTextField {
+            Layout.fillWidth: true
+            Layout.minimumWidth: implicitHeight * 1.8
+            Accessible.name: countRow.label
+            horizontalAlignment: TextInput.AlignHCenter
+            inputMethodHints: Qt.ImhDigitsOnly
+            validator: IntValidator { bottom: 1; top: countRow.maximum; locale: "C" }
+            text: String(countRow.value)
+            onEditingFinished: {
+                if (acceptableInput && root.noaCopilot)
+                    root.noaCopilot[countRow.setting] = Number(text)
+                text = Qt.binding(() => String(countRow.value))
+            }
+            onActiveFocusChanged: {
+                if (!activeFocus && !acceptableInput)
+                    text = Qt.binding(() => String(countRow.value))
+            }
+        }
+    }
+
     component PreferenceSwitch: AppSwitch {
         Layout.fillWidth: true
         Layout.minimumHeight: root.settingsRowHeight
@@ -1028,7 +1069,7 @@ AppDialog {
                         first: true
 
                         PreferenceSwitch {
-                            text: "启用 NoaCopilot 智能制谱助手"
+                            text: "启用 NoaCopilot"
                             checked: root.noaCopilot ? root.noaCopilot.enabled : false
                             onToggled: if (root.noaCopilot) root.noaCopilot.enabled = checked
                         }
@@ -1079,19 +1120,11 @@ AppDialog {
                             }
                         }
 
-                        PreferenceSlider {
-                            label: "续写行数"
-                            suffix: " 行"
-                            from: 1; to: 64; stepSize: 1; decimals: 0
-                            value: root.noaCopilot?.continuationLines ?? 4
-                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.continuationLines = Math.round(v) }
-                        }
-                        PreferenceSlider {
-                            label: "每行拍数"
-                            suffix: " 拍"
-                            from: 1; to: 64; stepSize: 1; decimals: 0
-                            value: root.noaCopilot?.lineAlignBeats ?? 4
-                            onMoved: v => { if (root.noaCopilot) root.noaCopilot.lineAlignBeats = Math.round(v) }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.settingsRowSpacing * 2
+                            NoaCountField { label: "续写行数"; setting: "continuationLines"; defaultValue: 4 }
+                            NoaCountField { label: "每行拍数"; setting: "lineAlignBeats"; defaultValue: 4 }
                         }
 
                         NoaTemperatureSlider {
@@ -1102,12 +1135,6 @@ AppDialog {
                             onMoved: v => { if (root.noaCopilot) root.noaCopilot.temperature = v }
                         }
 
-                        PreferenceCombo {
-                            label: "默认谱师风格"
-                            options: root.noaCopilot ? root.noaCopilot.designerOptions : []
-                            currentValue: root.noaCopilot ? root.noaCopilot.defaultDesigner : ""
-                            onPicked: value => { if (root.noaCopilot) root.noaCopilot.defaultDesigner = value }
-                        }
                     }
 
                     ColumnLayout {
@@ -1253,15 +1280,11 @@ AppDialog {
                             PreferenceGroup {
                                 title: "采样与预计算"
 
-                                Repeater {
-                                    model: [{key:"candidateCount",title:"预计算序列数量",max:8},
-                                            {key:"cpuThreads",title:"CPU 推理线程",max:64}]
-                                    delegate: PreferenceSlider {
-                                        required property var modelData
-                                        label: modelData.title; from: 1; to: modelData.max; stepSize: 1; decimals: 0
-                                        value: root.noaCopilot ? root.noaCopilot[modelData.key] : 1
-                                        onMoved: v => root.noaCopilot[modelData.key] = Math.round(v)
-                                    }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.settingsRowSpacing * 2
+                                    NoaCountField { label: "预计算序列数量"; setting: "candidateCount"; defaultValue: 3; maximum: 8 }
+                                    NoaCountField { label: "CPU 推理线程"; setting: "cpuThreads"; defaultValue: 4 }
                                 }
                                 PreferenceSlider {
                                     label: "slide出现概率"
