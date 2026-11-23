@@ -33,12 +33,13 @@ Item {
         x: Math.max(4, Math.min(root.width - width - 4, root.caretRect.x))
         y: Math.max(4, Math.min(root.height - height - 4, root.caretRect.y + root.caretRect.height + 4))
         radius: Theme.smallControlRadius
-        color: Theme.surfaceColor(Theme.colors.background.elevated)
+        color: Theme.colors.background.elevated
         Text {
             id: hint
             anchors.centerIn: parent
             text: root.noaCopilot?.transientHint ?? ""
             color: Theme.colors.text.primary
+            font.family: Theme.uiFont
             font.pixelSize: Theme.captionFontSize
         }
     }
@@ -58,8 +59,15 @@ Item {
         width: fillHint.implicitWidth+16
         height: 24
         radius: Theme.smallControlRadius
-        color: Theme.surfaceColor(Theme.colors.background.elevated)
-        Text { id: fillHint; anchors.centerIn: parent; text: "填充采音 (Tab)"; color: Theme.colors.accent.primary; font.pixelSize: Theme.captionFontSize }
+        color: Theme.colors.background.elevated
+        Text {
+            id: fillHint
+            anchors.centerIn: parent
+            text: "填充采音 (Tab)"
+            color: Theme.colors.text.active
+            font.family: Theme.uiFont
+            font.pixelSize: Theme.captionFontSize
+        }
         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.noaCopilot.triggerManualContinue() }
     }
     // Bottom-right non-blocking indicator for audio analysis & full chart streaming
@@ -75,7 +83,7 @@ Item {
         width: streamRow.implicitWidth + 20
         height: 32
         radius: Theme.controlRadius
-        color: Theme.surfaceColor(Theme.colors.background.elevated)
+        color: Theme.colors.background.elevated
         border.width: 1 / root.Screen.devicePixelRatio
         border.color: analyzing ? Theme.colors.syntax.warning : Theme.colors.accent.primary
 

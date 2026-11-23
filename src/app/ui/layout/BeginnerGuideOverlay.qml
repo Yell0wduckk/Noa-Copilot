@@ -503,7 +503,7 @@ Popup {
                                 width: parent.width
                                 text: root.interactivePrompt
                                 color: root.interactiveCompletedSteps >= root.interactiveStepSequence.length
-                                    ? "#4CC38A"
+                                    ? Theme.colors.status.success
                                     : Theme.colors.text.primary
                                 font.family: Theme.uiFont
                                 font.pixelSize: Theme.secondaryFontSize

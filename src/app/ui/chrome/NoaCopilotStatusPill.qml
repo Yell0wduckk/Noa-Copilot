@@ -29,7 +29,7 @@ Item {
         if (state === "generating")
             return Theme.colors.accent.primary
         if (state === "ready")
-            return "#4CC38A"
+            return Theme.colors.status.success
         return Theme.colors.text.secondary
     }
 
