@@ -1,0 +1,8 @@
+{
+  "mel": "DualWindowMel-125Hz",
+  "architecture": "maidata.maimai-flat320.grid24-mel2d-mertv2l8.draft2-te.hetero5-uob.rule6.v19",
+  "source": "ec2db87943273f1c7c94638da6660c29c1edc883",
+  "mert": "m-a-p/MERT-v2-FullSong L8",
+  "legacy_v184_source": "da8a1228af6c3e750d7a1b759751a3712b8b585e",
+  "legacy_v185_source": "d081e17be22e94c1ac4e8c76423bb5154d910c99"
+}

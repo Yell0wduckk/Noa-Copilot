@@ -27,7 +27,7 @@ Windows x64 轻量包支持在 NoaCopilot 设置中按需安装 PyTorch 2.11.0 C
 
 ## 重建推理包
 
-1. 使用 Qt 6.11.1 的 Release 目录构建 `MiaCode` 和 `MiaCodeLauncher`。运行 `scripts/build/package-win.ps1` 打包到新的发布目录，加 `-NoTorch` 可生成使用外部 Python 的轻量包。默认从工作区的 `repos-0wd-v3/worktrees/v19-flat320-drafter-te` 导出已提交的 `src/maidata`。可用 `MIACODE_FLAT_SOURCE` 和 `MIACODE_NOA_PYTHON_ENV` 指定源码仓库和可搬移的 Windows Python 环境。
+1. 使用 Qt 6.11.1 的 Release 目录构建 `MiaCode` 和 `MiaCodeLauncher`。运行 `scripts/build/package-win.ps1` 打包到新的发布目录，加 `-NoTorch` 可生成使用外部 Python 的轻量包。默认使用本仓库的 `resources/noa-copilot/runtime-src` 和对应的 `runtime.json`。更新已安装的推理源码时，关闭编辑器，将这两项覆盖到安装目录的 `app/noa-copilot/`，然后重新启动。可用 `MIACODE_FLAT_SOURCE` 和 `MIACODE_NOA_PYTHON_ENV` 指定源码仓库和可搬移的 Windows Python 环境。
 
 2. 两种发布包都省略 MERT2 权重。用户从 NoaCopilot 设置点击「下载 MERT2」后，应用用选定的音频特征推理环境下载官方 FullSong 快照并裁剪到前八层。安装目录包含原许可证、来源和裁剪说明，安装成功后清理下载的完整快照。已有八层模型的离线安装可继续使用。
 

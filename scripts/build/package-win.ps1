@@ -645,11 +645,8 @@ if (Test-Path $ffmpegSrc) {
     throw "Missing required ffmpeg binary: $ffmpegSrc"
 }
 
-# Include the provisioned x64 inference bundle in local desktop distributions.
-# Upstream builds and ARM64 packages can still use an external interpreter.
-$flatSource = if ($env:MIACODE_FLAT_SOURCE) { $env:MIACODE_FLAT_SOURCE } else { Join-Path $repoRoot "../../repos-0wd-v3/worktrees/v19-flat320-drafter-te" }
-if ($Arch -eq "x64" -and ($env:MIACODE_FLAT_SOURCE -or (Test-Path -LiteralPath $flatSource))) {
-    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -WorktreeRoot $flatSource -NoTorch:$NoTorch
+if ($Arch -eq "x64") {
+    & (Join-Path $PSScriptRoot "stage-noa-copilot.ps1") -DistDir $appDir -NoTorch:$NoTorch
 }
 
 # Required package contents come from the toolchain data file.
