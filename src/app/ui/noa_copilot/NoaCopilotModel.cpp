@@ -1563,6 +1563,8 @@ void NoaCopilotModel::discardCandidates()
     strikeLeft_ = strikeRight_ = -1;
     ghostLineCache_.reset();
     ghostTimelineModel_.reset();
+    const bool endingContinuation = !candidates_.isEmpty() && activeRequestId_ > 0
+        && activeRequestMode_ == QStringLiteral("continue");
     if (!candidates_.isEmpty()) {
         preview_.setCopilotReview(false);
         if (auto* bridge = qobject_cast<TimelineQuickStateBridge*>(timeline_.stateBridge())) bridge->clearGhostRangeCache();
@@ -1574,6 +1576,10 @@ void NoaCopilotModel::discardCandidates()
     exhausted_ = false;
     candidates_.clear();
     stepRequest_ = {};
+    // Replies for the retired request are ignored, including its cancellation.
+    if (endingContinuation && checkpointLoadedInDaemon_) {
+        updateStatus(QStringLiteral("ready"), QStringLiteral("就绪"), activeCheckpointName());
+    }
 }
 
 void NoaCopilotModel::requestMore()
