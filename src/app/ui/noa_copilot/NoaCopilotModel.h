@@ -4,6 +4,7 @@
 #include "app/ui/noa_copilot/NoaEnvironmentInstaller.h"
 #include "core/chart/model/TimelineData.h"
 #include "timeline/TimelineRenderData.h"
+#include <functional>
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QJsonArray>
@@ -300,6 +301,7 @@ public:
     Q_INVOKABLE void requestFullChartGeneration(
         const QString& levelOverride = QString(),
         const QString& designerOverride = QString());
+    Q_INVOKABLE void resolveInferenceLevelPrompt(bool proceed);
     Q_INVOKABLE void triggerFullChartStream() { requestFullChartGeneration(); }
     Q_INVOKABLE void cancelActiveGeneration();
 
@@ -334,6 +336,7 @@ signals:
     void cacheInfoChanged();
     void ghostStateChanged();
     void editorFocusRequested();
+    void inferenceLevelPromptRequested(bool canContinue);
     void emptyCardChanged();
     void streamingProgressChanged();
     void guidePracticeChanged();
@@ -360,6 +363,8 @@ private:
     void sendConfigureRequest();
     void sendBindSongIfNeeded();
     void sendSyncChartIfNeeded();
+    std::function<void()> pendingLevelConfirmation_;
+    void startSuggestion(const QString& mode, double levelVal, const QString& designerOverride);
     void sendSuggestRequest(
         const QString& mode,
         const QString& levelOverride,

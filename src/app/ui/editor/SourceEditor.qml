@@ -12,7 +12,6 @@ Rectangle {
     required property var syncController
     required property var analysisSession
     property var preferences: null
-    signal previewPlaybackRequested()
     property var noaCopilot: null
     onNoaCopilotChanged: {
         if (root.noaCopilot)
@@ -430,8 +429,6 @@ Rectangle {
         id: sourceArea
         objectName: "sourceArea"
         property bool reservesPlainSpace: true
-        spacePlaysPreview: root.viewState.difficultyEditorActive && (root.preferences?.editorSpacePlaysPreview ?? true)
-        onPreviewPlaybackRequested: root.previewPlaybackRequested()
         anchors.left: parent.left
         anchors.right: verticalBar.left
         anchors.top: findReplaceBar.bottom

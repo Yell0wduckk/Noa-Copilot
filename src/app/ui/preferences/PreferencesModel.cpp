@@ -447,20 +447,6 @@ void PreferencesModel::setEditorSelectionBeatDisplay(bool enabled)
     emit editorChanged();
 }
 
-bool PreferencesModel::editorSpacePlaysPreview() const
-{
-    return settings_ == nullptr || settings_->editorSpacePlaysPreview();
-}
-
-void PreferencesModel::setEditorSpacePlaysPreview(bool enabled)
-{
-    if (settings_ == nullptr || enabled == editorSpacePlaysPreview()) {
-        return;
-    }
-    settings_->setEditorSpacePlaysPreview(enabled);
-    emit editorChanged();
-}
-
 bool PreferencesModel::editorOverviewRulerEnabled() const
 {
     return settings_ != nullptr && settings_->editorOverviewRulerEnabled();

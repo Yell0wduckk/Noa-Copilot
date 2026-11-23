@@ -48,6 +48,7 @@ namespace miacode::ui {
 namespace {
 
 constexpr auto kPrefSectionKey = "noa_copilot";
+constexpr int kInferenceDifficulty = 5; // Master, independently of the active editor tab.
 constexpr int kIdleVramReleaseMs = 5 * 60 * 1000; // 5 minutes
 
 QString formatBytesText(qint64 bytes)
@@ -1289,7 +1290,7 @@ void NoaCopilotModel::sendSyncChartIfNeeded()
     req.insert(QStringLiteral("text"), document_.chartText());
     req.insert(QStringLiteral("first"), currentChartFirstSeconds());
     req.insert(QStringLiteral("bpm"), currentChartBpm());
-    req.insert(QStringLiteral("difficulty"), document_.currentDifficultyId());
+    req.insert(QStringLiteral("difficulty"), kInferenceDifficulty);
     req.insert(QStringLiteral("level"), parseLevelNumeric(document_.currentDifficultyLevel()));
     req.insert(QStringLiteral("designer"), effectiveDesigner());
     writeDaemonJson(req);
@@ -1303,6 +1304,37 @@ void NoaCopilotModel::sendSuggestRequest(
     if (!enabled_) {
         return;
     }
+    const QString level = levelOverride.trimmed().isEmpty() ? document_.currentDifficultyLevel().trimmed() : levelOverride.trimmed();
+    pendingLevelConfirmation_ = {};
+    if (level.isEmpty()) {
+        emit inferenceLevelPromptRequested(false);
+        return;
+    }
+    const double levelVal = parseLevelNumeric(level);
+    if (levelVal < 12.0) {
+        const auto generation = document_.documentOpenGeneration();
+        const auto revision = document_.documentRevision();
+        const int difficulty = document_.currentDifficultyId();
+        pendingLevelConfirmation_ = [this, generation, revision, difficulty, mode, levelVal, designerOverride] {
+            if (enabled_ && generation == document_.documentOpenGeneration()
+                && revision == document_.documentRevision() && difficulty == document_.currentDifficultyId()) {
+                startSuggestion(mode, levelVal, designerOverride);
+            }
+        };
+        emit inferenceLevelPromptRequested(true);
+        return;
+    }
+    startSuggestion(mode, levelVal, designerOverride);
+}
+
+void NoaCopilotModel::resolveInferenceLevelPrompt(bool proceed)
+{
+    auto pending = std::exchange(pendingLevelConfirmation_, {});
+    if (proceed && pending) pending();
+}
+
+void NoaCopilotModel::startSuggestion(const QString& mode, double levelVal, const QString& designerOverride)
+{
     ensureDaemonRunning();
     if (!hasCheckpoint()) {
         updateStatus(
@@ -1344,9 +1376,6 @@ void NoaCopilotModel::sendSuggestRequest(
     }
 
     const QString audioPath = miacode::chart_assets::resolveTrackPath(document_.currentFilePath());
-    const double levelVal = !levelOverride.trimmed().isEmpty()
-        ? parseLevelNumeric(levelOverride)
-        : parseLevelNumeric(document_.currentDifficultyLevel());
     const QString designerVal = effectiveDesigner(designerOverride);
 
     QJsonObject req;
@@ -1359,7 +1388,6 @@ void NoaCopilotModel::sendSuggestRequest(
     req.insert(QStringLiteral("audio"), audioPath);
     req.insert(QStringLiteral("first"), currentChartFirstSeconds());
     req.insert(QStringLiteral("bpm"), currentChartBpm());
-    req.insert(QStringLiteral("difficulty"), document_.currentDifficultyId());
     req.insert(QStringLiteral("level"), levelVal);
     req.insert(QStringLiteral("designer"), designerVal);
     req.insert(QStringLiteral("cursor_offset"), lastCursorPos_);
@@ -1424,7 +1452,7 @@ QJsonObject NoaCopilotModel::chartRequest() const
     const QString extra = document_.metadataExtraText();
     QJsonObject request{{"protocol",2},{"audio",miacode::chart_assets::resolveTrackPath(document_.currentFilePath())},
         {"first",currentChartFirstSeconds()},{"bpm",currentChartBpm()},
-        {"level",parseLevelNumeric(document_.currentDifficultyLevel())},{"difficulty",document_.currentDifficultyId()},
+        {"level",parseLevelNumeric(document_.currentDifficultyLevel())},{"difficulty",kInferenceDifficulty},
         {"designer",effectiveDesigner()},{"line_align_beats",lineAlignBeats_},{"candidate_count",candidateCount_}};
     for (const auto& key : {QStringLiteral("shortid"),QStringLiteral("cabinet"),QStringLiteral("version")}) {
         QRegularExpression field("^&" + key + "=([^\\r\\n]+)",QRegularExpression::MultilineOption);
@@ -1483,6 +1511,8 @@ void NoaCopilotModel::scanEnvironments(bool discover)
 void NoaCopilotModel::warmSong()
 {
     if (!enabled_ || !daemonConfigured_ || !hasCheckpoint() || fullStreamingActive_ || !document_.hasDocument()) return;
+    const QString level = document_.currentDifficultyLevel().trimmed();
+    if (level.isEmpty() || parseLevelNumeric(level) < 12.0) return;
     auto req = chartRequest();
     if (req["audio"].toString().isEmpty()) return;
     req["text"] = noaWarmTimingText(document_.chartText());
@@ -2959,7 +2989,7 @@ double NoaCopilotModel::parseLevelNumeric(const QString& levelText) const
     }
     bool ok = false;
     double val = cleaned.toDouble(&ok);
-    if (!ok || val <= 0.0) {
+    if (!ok) {
         return 13.0;
     }
     if (!cleaned.contains(QLatin1Char('.')) && qFloor(val) == val) {

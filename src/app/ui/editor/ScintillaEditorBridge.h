@@ -24,7 +24,6 @@ class ScintillaEditorBridge : public ScintillaQuick_item
     Q_PROPERTY(EditorController* controller READ controller WRITE setController NOTIFY bindingsChanged)
     Q_PROPERTY(miacode::EditorSyncController* syncController READ syncController WRITE setSyncController NOTIFY bindingsChanged)
     Q_PROPERTY(AnalysisModel* analysisSession READ analysisSession WRITE setAnalysisSession NOTIFY bindingsChanged)
-    Q_PROPERTY(bool spacePlaysPreview MEMBER spacePlaysPreview_)
     Q_PROPERTY(QObject* noaCopilot READ noaCopilot WRITE setNoaCopilot NOTIFY bindingsChanged)
     Q_PROPERTY(bool navigationVisible READ navigationVisible WRITE setNavigationVisible NOTIFY bindingsChanged)
     // The hosting QML surface owns the theme fill, including wallpaper opacity.
@@ -139,7 +138,6 @@ public:
     Q_INVOKABLE void setInlineGhostPreview(bool active, int insertPos, const QString& ghostText, int strikeStart, int strikeEnd);
 signals:
     void bindingsChanged();
-    void previewPlaybackRequested();
     void manualGhostRequested();
     void inlineGhostVisualChanged();
     void editorColorsChanged();
@@ -266,7 +264,6 @@ private:
     QHash<int, TouchUndoAnchor> touchUndoAnchors_;
     int nextTouchToken_ = 1;
     int pendingTouchAnchor_ = -1;
-    bool spacePlaysPreview_ = true;
     QPointer<QObject> noaCopilot_;
     bool inlineGhostActive_ = false;
     bool updatingInlineGhost_ = false;

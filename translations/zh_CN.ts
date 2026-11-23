@@ -3241,10 +3241,6 @@ The file may be open in preview, a media player, File Explorer preview pane, or 
         <source>Show selection beat count</source>
         <translation>显示选区拍数</translation>
     </message>
-    <message id="preferences.editor_space_plays_preview">
-        <source>Play or pause the chart preview with Space in the editor</source>
-        <translation>编辑器中点按空格是否播放谱面</translation>
-    </message>
     <message id="preferences.editor_overview_ruler">
         <source>Overview ruler</source>
         <translation>概览标尺</translation>

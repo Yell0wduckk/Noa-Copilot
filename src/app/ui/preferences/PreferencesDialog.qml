@@ -830,13 +830,6 @@ AppDialog {
                             }
 
                             PreferenceSwitch {
-                                objectName: "preferencesEditorSpacePlaysPreviewSwitch"
-                                text: qsTrId("preferences.editor_space_plays_preview")
-                                checked: root.preferencesModel.editorSpacePlaysPreview
-                                onToggled: root.preferencesModel.editorSpacePlaysPreview = checked
-                            }
-
-                            PreferenceSwitch {
                                 objectName: "preferencesOverviewRulerSwitch"
                                 text: qsTrId("preferences.editor_overview_ruler")
                                 checked: root.preferencesModel.editorOverviewRulerEnabled

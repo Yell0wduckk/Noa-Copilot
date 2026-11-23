@@ -252,6 +252,10 @@ Item {
         property bool fillEditorWidth: false
         property bool commitOnEditingFinished: false
         signal committed(string value)
+        function editValue() {
+            fieldEditor.forceActiveFocus()
+            fieldEditor.selectAll()
+        }
 
         implicitWidth: fieldLabel.implicitWidth + 8 + fieldEditor.editorWidth
         implicitHeight: stacked
@@ -396,7 +400,6 @@ Item {
         analysisSession: root.analysisSession
         preferences: root.preferences
         noaCopilot: root.noaCopilot
-        onPreviewPlaybackRequested: root.previewSession.togglePlayback()
         onNormalizeChartRequested: root.pages.openNormalizeWholeChart()
         onCompletionSettingsRequested: function(group) { root.completionSettingsRequested(group) }
     }
@@ -671,6 +674,47 @@ Item {
         onNewRequested: root.commands.newDocument()
         onOpenRequested: root.openRequested()
         onOpenRecentRequested: path => root.commands.openRecentDocument(path)
+    }
+
+    Connections {
+        target: root.noaCopilot
+        function onInferenceLevelPromptRequested(canContinue) {
+            levelPrompt.canContinue = canContinue
+            levelPrompt.open()
+        }
+    }
+
+    AppDialog {
+        id: levelPrompt
+        objectName: "noaInferenceLevelPrompt"
+        property bool canContinue: false
+        property string action: ""
+        title: "NoaCopilot"
+        preferredWidth: 374
+        preferredHeight: implicitHeaderHeight + implicitFooterHeight + body.implicitHeight + topPadding + bottomPadding
+        body: Label {
+            text: levelPrompt.canContinue ? "设置等级过低会影响推理效果，确认要继续吗？" : "请填写谱面等级后再开始推理"
+            font.family: Theme.uiFont
+            font.pixelSize: Theme.uiFontSize
+            color: Theme.colors.text.primary
+            wrapMode: Text.WordWrap
+        }
+        footer: DialogFooter {
+            choices: levelPrompt.canContinue
+                ? [{id: "edit", label: "填写等级"}, {id: "continue", label: "继续推理", role: "accept"}]
+                : [{id: "edit", label: "填写等级", role: "accept"}]
+            onChosen: choice => {
+                levelPrompt.action = choice
+                levelPrompt.close()
+            }
+        }
+        onClosed: {
+            const choice = action
+            action = ""
+            if (choice === "edit") levelField.editValue()
+            else if (choice === "continue") sourceEditor.focusEditor()
+            root.noaCopilot.resolveInferenceLevelPrompt(choice === "continue")
+        }
     }
 
     DesignerSlotsDialog {
