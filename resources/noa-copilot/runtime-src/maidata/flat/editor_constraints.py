@@ -126,9 +126,14 @@ class Physical:
 class Skeleton:
     """Slots are consumed by kind, allowing the model to order pads within a chord."""
 
-    def __init__(self, rows):
+    def __init__(self, rows, *, reserve_slides=False):
         self.rows = rows
         self.ticks = sorted(rows)
+        # Once a selection reserves Slides for starred slots, stepping past
+        # its last star must not change the meaning of the remaining x slots.
+        self.reserve_slides = reserve_slides or any(
+            slot.get("branches", 0) > 0 for slots in rows.values() for slot in slots
+        )
 
     def mask(self, g, choices, physical=None):
         def generated(ids):
@@ -153,8 +158,7 @@ class Skeleton:
             return generated(choices)
         slots = self.rows.get(g.tick, ())
         remaining = list(slots)
-        # Each fixed item is replayed as its original Flat320 fields. Generated
-        # placeholders consume an interchangeable non-slide or k-branch slot.
+        # Replay fixed items first, then consume the selected placeholders.
         active = g.notes[-1] if g.phase != "start_note" and g.notes else None
         finished = g.notes[:-1] if active is not None else g.notes
         for note in finished:
@@ -163,6 +167,7 @@ class Skeleton:
                 remaining.remove(slot)
         locked = [s for s in remaining if "tokens" in s]
         free = [s["branches"] for s in remaining if "tokens" not in s]
+        wildcard = not self.reserve_slides and 0 in free
         if g.phase == "start_note":
             if locked:
                 return [i for i in choices if i == locked[0]["tokens"][0]]
@@ -176,7 +181,7 @@ class Skeleton:
                 return [i for i in choices if i == seq[offset]]
         is_slide = active is not None and active[2] == SLIDE
         branches = len(active[6]) if is_slide else 0
-        done = bool(locked) or branches in free
+        done = bool(locked) or wildcard or branches in free
         more = len(remaining) > 1
         out = []
         for i in choices:
@@ -187,24 +192,24 @@ class Skeleton:
             elif locked or family in ("PSEUDO_EACH", "TOUCH_PAD"):
                 continue
             elif family == "SLIDE_BRANCH":
-                if any(k > branches for k in free):
+                if wildcard or any(k > branches for k in free):
                     out.append(i)
             elif family == "SLIDE_HEAD":
-                if any(k > 0 for k in free):
+                if wildcard or any(k > 0 for k in free):
                     out.append(i)
             elif family != "HOLD" or 0 in free:
                 out.append(i)
         # A separator leading to another handwritten note is part of its replay.
         return out if len(locked) > 1 else generated(out)
 
-    @staticmethod
-    def match(note, slots):
+    def match(self, note, slots):
         for slot in slots:
             if "tokens" in slot and slot["tokens"] == list(
                 note_tokens(slot["tick"], note)
             ):
                 return slot
         return next(
-            (s for s in slots if "tokens" not in s and s["branches"] == len(note[6])),
+            (s for s in slots if "tokens" not in s
+             and (not self.reserve_slides or s["branches"] == len(note[6]))),
             None,
         )

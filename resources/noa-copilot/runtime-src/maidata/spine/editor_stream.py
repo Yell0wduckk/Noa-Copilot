@@ -13,8 +13,8 @@ from maidata.spine.codec import HOLD, PADS, SLIDE
 from .editor import EditorChart, _leading_tags
 
 
-def notes_at(tick, notes, grid, slots=()):
-    remaining = list(slots)
+def notes_at(tick, notes, grid, skeleton=None):
+    remaining = list(skeleton.rows.get(tick, ())) if skeleton else []
     rows = []
     for note in notes:
         pad, group, kind, flags, end, head, branches = note
@@ -41,7 +41,7 @@ def notes_at(tick, notes, grid, slots=()):
                     )
                 )
         if remaining:
-            slot = Skeleton.match(note, remaining)
+            slot = skeleton.match(note, remaining)
             if slot is not None:
                 remaining.remove(slot)
                 if "tokens" not in slot:
@@ -50,7 +50,7 @@ def notes_at(tick, notes, grid, slots=()):
     return rows
 
 
-def targets(chart, span, grid):
+def targets(chart, span, grid, *, reserve_slides=False):
     if not span.skeleton:
         return None
     native, _, _ = chart.history(span.stop)
@@ -69,7 +69,7 @@ def targets(chart, span, grid):
                 slots.append(slot)
         if not slots:
             del targets[tick]
-    return Skeleton(targets)
+    return Skeleton(targets, reserve_slides=reserve_slides)
 
 
 def boundary(chart, grid, span, stop, full=False):
@@ -231,7 +231,8 @@ class Stream:
                     if self.decoder.skeleton
                     else None
                 )
-            skeleton = targets(chart, span, grid)
+            reserve_slides = bool(stepped and self.decoder.skeleton and self.decoder.skeleton.reserve_slides)
+            skeleton = targets(chart, span, grid, reserve_slides=reserve_slides)
 
             def decoder(prefix_tokens=None):
                 raw_prefix, _, _ = chart.history(span.start)
@@ -311,13 +312,12 @@ class Stream:
                 if advance:
                     send("beat", tick=t, candidate=number, attempt=attempt)
                 else:
-                    slots = d.skeleton.rows.get(t, ()) if d.skeleton else ()
                     send(
                         "moment",
                         candidate=number,
                         attempt=attempt,
                         tick=t,
-                        notes=notes_at(t, notes, self.grid, slots),
+                        notes=notes_at(t, notes, self.grid, d.skeleton),
                     )
 
             track = d.sample(
