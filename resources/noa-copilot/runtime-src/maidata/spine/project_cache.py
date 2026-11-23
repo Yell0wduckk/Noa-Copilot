@@ -41,6 +41,15 @@ def route_library_caches(folder):
 
 def song_cache_folder(audio):
     folder = Path(audio).absolute().parent / ".miacode" / ".noacopilot"
+    if os.name == "nt":
+        # Keep atomic replacement of hash-named files working beyond MAX_PATH.
+        absolute = os.path.abspath(folder)
+        if not absolute.startswith("\\\\?\\"):
+            if absolute.startswith("\\\\"):
+                absolute = "\\\\?\\UNC\\" + absolute[2:]
+            else:
+                absolute = "\\\\?\\" + absolute
+        folder = Path(absolute)
     route_library_caches(folder)
     return folder
 

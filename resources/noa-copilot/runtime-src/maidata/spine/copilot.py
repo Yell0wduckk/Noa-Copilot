@@ -38,6 +38,12 @@ class _Numpy1CheckpointPickle:
 
 
 def native_path(value):
+    # wslpath takes DOS/UNC paths, including when a Windows cache worker uses long paths.
+    if os.name == "posix" and value:
+        if value.startswith("\\\\?\\UNC\\"):
+            value = "\\\\" + value[8:]
+        elif value.startswith("\\\\?\\"):
+            value = value[4:]
     if value and os.name == "posix" and (value[1:2] == ":" or value.startswith("\\\\")):
         return subprocess.check_output(
             ["wslpath", "-a", "-u", value], text=True
