@@ -44,9 +44,7 @@ bool testUndoSelection(QTextStream& out)
             const int flags = int(notification.modificationType);
             if (notification.code != Scintilla::Notification::Modified
                 || !(flags & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT))) return;
-            document.applyChange(notification.position,
-                flags & SC_MOD_DELETETEXT ? QString::fromUtf8(notification.text).size() : 0,
-                flags & SC_MOD_INSERTTEXT ? notification.text : QByteArray{});
+            document.applyChange(notification);
         });
     const QString original = QStringLiteral("中文😀(120){4}1,2,3,4,");
     const int start = original.indexOf(QStringLiteral("1,2,"));
