@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
 set(MIACODE_VERSION_MAJOR "2")
-set(MIACODE_VERSION_MINOR "0")
-set(MIACODE_VERSION_PATCH "1")
+set(MIACODE_VERSION_MINOR "1")
+set(MIACODE_VERSION_PATCH "0")
 # Single source of truth for the prerelease tag and package version. The
 # About dialog appends its compile date to this version at runtime.
 set(MIACODE_VERSION_PRERELEASE "")
@@ -16,7 +16,7 @@ endif()
 # dialog adds its compile date to the visible version separately.
 set(MIACODE_DISPLAY_VERSION_STRING "${MIACODE_VERSION_STRING}")
 
-set(MIACODE_RELEASE_CHANNEL "nightly" CACHE STRING "Distribution channel: nightly or release")
+set(MIACODE_RELEASE_CHANNEL "release" CACHE STRING "Distribution channel: nightly or release")
 set_property(CACHE MIACODE_RELEASE_CHANNEL PROPERTY STRINGS nightly release)
 if (MIACODE_RELEASE_CHANNEL STREQUAL "nightly")
     set(MIACODE_RELEASE_CHANNEL_DISPLAY "Nightly")
@@ -555,8 +555,6 @@ add_executable(MiaCode WIN32 MACOSX_BUNDLE
     src/app/services/ProjectPreferences.h
     src/app/services/ProjectPreferences.cpp
     src/app/services/ChartBannerData.h
-    src/app/services/ExportIntroPreferences.h
-    src/app/services/ExportIntroPreferences.cpp
     src/app/runtime/latency/LatencyAnalysis.h
     src/app/runtime/latency/LatencyAnalysis.cpp
     src/app/runtime/latency/LatencyTestChartBuilder.h
@@ -632,8 +630,11 @@ file(WRITE "${MIACODE_THEME_PALETTE_SCRIPT}" ".pragma library\nvar catalog = ${M
 set_source_files_properties("${MIACODE_THEME_PALETTE_SCRIPT}" PROPERTIES QT_RESOURCE_ALIAS "ThemePalettes.js")
 set(MIACODE_UI_QML_FILES
     src/app/ui/net/NetDownloadPage.qml
+    src/app/ui/net/NetFormField.qml
+    src/app/ui/net/NetPageButton.qml
     src/app/ui/net/NetUploadPage.qml
     src/app/ui/net/NetResultTable.qml
+    src/app/ui/net/NetSearchField.qml
     src/app/ui/components/AppDateField.qml
     src/app/ui/components/PreviewPositionCard.qml
     src/app/ui/components/SidebarModeCard.qml
@@ -649,10 +650,12 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/components/AppTabButton.qml
     src/app/ui/components/AppTabBar.qml
     src/app/ui/components/AppTabPages.qml
+    src/app/ui/components/AppSegmentedControl.qml
     src/app/ui/components/AppChoiceButton.qml
     src/app/ui/components/DifficultySelector.qml
     src/app/ui/components/DifficultySwatch.qml
     src/app/ui/components/PanelHeader.qml
+    src/app/ui/components/SidebarEdgePill.qml
     src/app/ui/components/SplitHandle.qml
     src/app/ui/components/SplitSnapController.qml
     src/app/ui/components/ResizeSnapState.qml
@@ -678,14 +681,18 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/components/FadeTransition.qml
     src/app/ui/components/AppDialog.qml
     src/app/ui/components/AppStickyPopup.qml
+    src/app/ui/components/AppColorField.qml
     src/app/ui/components/AppDropdownPanel.qml
     src/app/ui/components/AppMenuItem.qml
     src/app/ui/components/AppMenuSeparator.qml
     src/app/ui/components/UiRequestHost.qml
+    src/app/ui/components/AppToast.qml
     src/app/ui/components/DialogFooter.qml
     src/app/ui/components/ChoiceDialog.qml
     src/app/ui/components/EditableValue.qml
     src/app/ui/components/LabeledCombo.qml
+    src/app/ui/components/FontSamplePane.qml
+    src/app/ui/components/LabeledFocusSlider.qml
     src/app/ui/components/LabeledSlider.qml
     src/app/ui/components/SettingsSection.qml
     src/app/ui/components/JobProgressOverlay.qml
@@ -697,6 +704,7 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/chrome/MainMenu.qml
     src/app/ui/chrome/NativeMenuBar.qml
     src/app/ui/chrome/ShortcutBindings.qml
+    src/app/ui/chrome/PreviewShortcuts.qml
     src/app/ui/chrome/MainMenuCommands.qml
     src/app/ui/chrome/MainToolBar.qml
     src/app/ui/chrome/StatusBar.qml
@@ -707,6 +715,7 @@ set(MIACODE_UI_QML_FILES
     src/app/ui/editor/NoaCopilotEmptyCard.qml
     src/app/ui/layout/MainView.qml
     src/app/ui/layout/MainSplitView.qml
+    src/app/ui/layout/ChartLibraryPage.qml
     src/app/ui/layout/WelcomePage.qml
     src/app/ui/layout/BeginnerGuideOverlay.qml
     src/app/ui/layout/SetupWizard.qml
@@ -797,8 +806,19 @@ set(MIACODE_UI_ICON_FILES
     src/app/ui/resources/icons/sliders-horizontal-fill.svg
     src/app/ui/resources/icons/more-fill.svg
     src/app/ui/resources/icons/folder-open.svg
+    src/app/ui/resources/icons/chart-library.svg
+    src/app/ui/resources/icons/chart-library-fill.svg
+    src/app/ui/resources/icons/refresh.svg
+    src/app/ui/resources/icons/filter.svg
+    src/app/ui/resources/icons/filter-fill.svg
+    src/app/ui/resources/icons/search.svg
     src/app/ui/resources/icons/folder-arrow-right.svg
     src/app/ui/resources/icons/globe.svg
+    src/app/ui/resources/icons/globe-fill.svg
+    src/app/ui/resources/icons/download.svg
+    src/app/ui/resources/icons/download-fill.svg
+    src/app/ui/resources/icons/upload.svg
+    src/app/ui/resources/icons/upload-fill.svg
     src/app/ui/resources/icons/wand.svg
     src/app/ui/resources/icons/save.svg
     src/app/ui/resources/icons/save-multiple.svg
@@ -820,6 +840,7 @@ set(MIACODE_UI_ICON_FILES
     src/app/ui/resources/icons/chevron-left.svg
     src/app/ui/resources/icons/chevron-right.svg
     src/app/ui/resources/icons/settings.svg
+    src/app/ui/resources/icons/question-circle.svg
     src/app/ui/resources/icons/chart.svg
     src/app/ui/resources/icons/export.svg
     src/app/ui/resources/icons/tools.svg
@@ -830,6 +851,7 @@ set(MIACODE_UI_ICON_FILES
     src/app/ui/resources/icons/volume-2.svg
     src/app/ui/resources/icons/volume-x.svg
     src/app/ui/resources/icons/close.svg
+    src/app/ui/resources/icons/toast-error.svg
     src/app/ui/resources/icons/more.svg
     src/app/ui/resources/icons/metadata.svg
     src/app/ui/resources/icons/metronome.svg
@@ -902,6 +924,8 @@ qt_add_qml_module(MiaCode
         src/app/ui/chrome/PlatformChrome.h
         src/app/ui/layout/PageHost.cpp
         src/app/ui/layout/PageHost.h
+        src/app/ui/layout/ChartLibraryModel.cpp
+        src/app/ui/layout/ChartLibraryModel.h
         src/app/ui/editor/EditorController.cpp
         src/app/ui/editor/EditorController.h
         src/app/ui/editor/ScintillaEditorBridge.cpp
@@ -912,8 +936,12 @@ qt_add_qml_module(MiaCode
         src/app/ui/editor/ScintillaDslStyler.h
         src/app/ui/chrome/ShortcutModel.cpp
         src/app/ui/chrome/ShortcutModel.h
+        src/app/ui/chrome/EditorInputContext.cpp
+        src/app/ui/chrome/EditorInputContext.h
         src/app/ui/export/ExportSession.cpp
         src/app/ui/export/ExportSession.h
+        src/app/ui/export/AnimatedImageClipboardService.cpp
+        src/app/ui/export/AnimatedImageClipboardService.h
         src/app/ui/export/CoverExportSession.cpp
         src/app/ui/export/CoverExportSession.h
         src/app/ui/export/CoverExportWindow.cpp
@@ -992,7 +1020,9 @@ target_include_directories(MiaCode PRIVATE
     src
     # qmltyperegistrar includes QML_ELEMENT headers by file name only; project
     # code includes them by their src-rooted path.
+    src/app/ui/chrome
     src/app/ui/editor
+    src/app/ui/layout
     src/app/ui/noa_copilot
     src/app/ui/pet
     src/app/ui/timeline

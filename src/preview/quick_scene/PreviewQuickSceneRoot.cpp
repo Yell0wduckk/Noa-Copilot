@@ -29,6 +29,7 @@
 #include <QSGOpacityNode>
 #include <QSGSimpleTextureNode>
 #include <QSGNode>
+#include <rhi/qrhi.h>
 
 #include <memory>
 #include <utility>
@@ -41,6 +42,16 @@ constexpr qint64 kNoteLayersEmptyAnomalyLogIntervalMs = 2000;
 class PreviewQuickRootNode final : public QSGNode
 {
 public:
+    struct FrameKey {
+        std::shared_ptr<const miacode::preview::scene::PreviewFrameState> snapshot;
+        QSize size;
+        QColor background;
+        miacode::preview::scene::PreviewRenderLayerFlags layers;
+        qreal devicePixelRatio = 1.0;
+        bool operator==(const FrameKey&) const = default;
+    };
+    std::optional<FrameKey> renderedFrame;
+
     explicit PreviewQuickRootNode(QQuickWindow* window)
         : window_(window)
     {
@@ -68,6 +79,7 @@ public:
         }
         destroyAllChildren();
         createLayerSlots();
+        renderedFrame.reset();
     }
 
     void clearLayerContentsFrom(int firstSlotIndex)
@@ -86,6 +98,7 @@ public:
 
     void resetTextureGeneration()
     {
+        renderedFrame.reset();
         clearLayerContentsFrom(0);
         textures_.clear();
         textures_.setWindow(window_);
@@ -317,8 +330,8 @@ PreviewQuickSceneRoot::PreviewQuickSceneRoot(QQuickItem* parent)
 
 PreviewQuickSceneRoot::~PreviewQuickSceneRoot()
 {
-#ifdef Q_OS_MACOS
     QObject::disconnect(framePresentedCaptureConnection_);
+#ifdef Q_OS_MACOS
     QObject::disconnect(guiFrameConnection_);
 #endif
     if (frameSwapConnection_) {
@@ -525,8 +538,8 @@ void PreviewQuickSceneRoot::setRuntimeObject(QObject* runtimeObject)
 
 void PreviewQuickSceneRoot::setFrameState(const miacode::preview::scene::PreviewFrameState* frameState)
 {
-#ifdef Q_OS_MACOS
     QObject::disconnect(framePresentedCaptureConnection_);
+#ifdef Q_OS_MACOS
     QObject::disconnect(guiFrameConnection_);
 #endif
     if (runtime_ != nullptr && boundWindow_ != nullptr) {
@@ -620,10 +633,11 @@ PreviewTextureStats PreviewQuickSceneRoot::takePendingTextureStatsForPresentatio
 
 void PreviewQuickSceneRoot::syncVisibleHostWindowBinding(const char* reason)
 {
-#ifdef Q_OS_MACOS
     QObject::disconnect(framePresentedCaptureConnection_);
+#ifdef Q_OS_MACOS
     QObject::disconnect(guiFrameConnection_);
 #endif
+    presentationBinding_.reset();
     const QString reasonText = QString::fromLatin1(reason != nullptr ? reason : "unspecified");
     if (frameSwapConnection_) {
         QObject::disconnect(frameSwapConnection_);
@@ -637,7 +651,8 @@ void PreviewQuickSceneRoot::syncVisibleHostWindowBinding(const char* reason)
     // old ones here: they are Qt::DirectConnection lambdas and re-binding the same
     // window (F11 / re-parent) would otherwise stack a duplicate set on every rebind.
     for (QMetaObject::Connection* connection : {
-             &fireworkPresentConnection_,
+             &sceneGraphInvalidatedConnection_,
+             &mmcssBootstrapConnection_,
              &renderBeforeSyncConnection_,
              &renderAfterSyncConnection_,
              &renderBeforeRenderConnection_,
@@ -732,55 +747,52 @@ void PreviewQuickSceneRoot::syncVisibleHostWindowBinding(const char* reason)
         syncVisibleHostWindowBinding("window_visibility_changed");
         update();
     });
-    // Direct (render-thread) hook: promotes "the firework layer emitted a node during
-    // this frame's updatePaintNode" into "a frame containing that node has been
-    // presented", which is the warm-up's completion criterion. Kept separate from the
-    // queued frameSwapped handler below precisely because that one can lag a frame.
-    fireworkPresentConnection_ = QObject::connect(
-        boundWindow_, &QQuickWindow::frameSwapped, this,
-        [this]() {
-            if (!fireworkNodeInPendingFrame_) {
-                return;
-            }
-            fireworkNodeInPendingFrame_ = false;
-            if (runtime_ != nullptr) {
-                runtime_->notifyFireworkLayerPresentedNode();
-            }
-        },
-        Qt::DirectConnection);
-#ifdef Q_OS_MACOS
-    // 原生窗口动画期间，绘制仍可继续，界面线程的排队通知可能延迟。
-    // 每次绑定独立保存待处理状态，两种界面线程回调共享一次性通知。
-    const auto pendingPresent = std::make_shared<std::atomic<bool>>(false);
+    const auto binding = std::make_shared<PresentationBinding>();
+    presentationBinding_ = binding;
+    // Render-thread work belongs to this binding even if the GUI switches windows.
     framePresentedCaptureConnection_ = QObject::connect(
         boundWindow_, &QQuickWindow::frameSwapped, this,
-        [pendingPresent]() { pendingPresent->store(true, std::memory_order_release); },
-        Qt::DirectConnection);
-    const auto notifyPresented = [this, pendingPresent,
-                                  host = boundWindow_, runtime = runtime_]() {
-        if (host != boundWindow_ || runtime != runtime_
-            || !pendingPresent->exchange(false, std::memory_order_acquire)) {
+        [binding]() {
+            if (std::exchange(binding->fireworkInFrame, false)) {
+                binding->fireworkPresented.store(true, std::memory_order_release);
+            }
+#ifdef Q_OS_MACOS
+            binding->pendingPresentCount.fetch_add(1, std::memory_order_release);
+#endif
+        }, Qt::DirectConnection);
+    const auto notifyPresented = [this, binding]() {
+        if (binding != presentationBinding_ || runtime_ == nullptr || boundWindow_ == nullptr) {
+            return;
+        }
+#ifdef Q_OS_MACOS
+        const int presentCount = binding->pendingPresentCount.exchange(0, std::memory_order_acquire);
+        if (presentCount <= 0) {
             return;
         }
 #else
-    const auto notifyPresented = [this]() {
+        constexpr int presentCount = 1;
 #endif
-        if (runtime_ == nullptr || boundWindow_ == nullptr || window() != boundWindow_) {
-            return;
+        if (binding->fireworkPresented.exchange(false, std::memory_order_acquire)) {
+            runtime_->notifyFireworkLayerPresentedNode();
         }
         if (miacode::debug_options::previewProfileOutputEnabled()) {
             runtime_->notePresentedTextureStats(takePendingTextureStatsForPresentation());
         }
-        runtime_->notifyVisibleFramePresented();
+        for (int i = 0; i < presentCount; ++i) {
+            runtime_->notifyVisibleFramePresented();
+        }
     };
     frameSwapConnection_ = QObject::connect(
         boundWindow_, &QQuickWindow::frameSwapped, this, notifyPresented);
 #ifdef Q_OS_MACOS
-    // afterAnimating 在界面线程、场景同步之前执行；复用原有播放帧率控制。
-    // 与排队通知共用一次性标记，每个待处理呈现最多推进一次播放。
     guiFrameConnection_ = QObject::connect(
         boundWindow_, &QQuickWindow::afterAnimating, this,
-        notifyPresented, Qt::DirectConnection);
+        [this, binding, notifyPresented] {
+            notifyPresented();
+            if (binding == presentationBinding_ && runtime_ != nullptr) {
+                emit runtime_->framePreparing();
+            }
+        }, Qt::DirectConnection);
 #endif
     // Register Qt's QSG render thread with Windows MMCSS (Multimedia Class Scheduler
     // Service) under the "Games" task class. This asks the OS scheduler to protect the
@@ -909,7 +921,6 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
                 .arg(statsBeforeReset.transientTextureCount)
                 .arg(statsBeforeReset.retainedTextureCount));
     }
-    textures->beginFrame();
     const bool layerProfilingEnabled =
         miacode::debug_options::previewProfileOutputEnabled() || renderDiagEnabled;
     layerProfileStats_.clear();
@@ -918,7 +929,7 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
     const miacode::preview::scene::PreviewFrameState* state = nullptr;
     std::shared_ptr<const miacode::preview::scene::PreviewFrameState> runtimeStateSnapshot;
     if (runtime_ != nullptr) {
-        runtimeStateSnapshot = runtime_->frameStateSnapshot();
+        runtimeStateSnapshot = runtime_->sceneFrameStateSnapshot();
         state = runtimeStateSnapshot.get();
     } else {
         state = frameState_;
@@ -960,9 +971,23 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
         return root;
     }
 
+    const PreviewQuickRootNode::FrameKey frameKey{
+        runtimeStateSnapshot, renderSize, backgroundColor_, layerFlags_, window()->effectiveDevicePixelRatio()};
+    // A present used to pace playback can carry the same immutable snapshot.
+    // Keep its geometry and transient textures alive until the snapshot changes.
+    if (runtimeStateSnapshot != nullptr && root->renderedFrame == frameKey) {
+        if (miacode::debug_options::previewProfileOutputEnabled()) {
+            enqueueTextureStatsForPresentation(mergedTextureStats(*textures, layerProfileStats_));
+        }
+        if (renderDiagEnabled) renderPhaseUpdatePaintEndNs_ = renderPhaseTimer_.nsecsElapsed();
+        return root;
+    }
+    textures->beginFrame();
+
     const bool releaseStorage = preparedCache_.key().storageGeneration != state->sceneStorageGeneration;
     const bool cacheRebuilt = preparedCache_.sync(*state);
     if (cacheRebuilt) {
+        cachedNoteMarkerSpan_.reset();
         muriPadCursor_.reset(releaseStorage);
         muriActionCursor_.reset(releaseStorage);
         muriPadIndices_ = {};
@@ -981,6 +1006,7 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
     }
 
     const double playheadSeconds = state->playheadSeconds;
+    renderPhasePlayheadSeconds_ = playheadSeconds;
     miacode::preview::scene::syncPreviewLayerWindowCursor(preparedCache_.muriPadLayer(), playheadSeconds, &muriPadCursor_);
     miacode::preview::scene::syncPreviewLayerWindowCursor(preparedCache_.muriActionLayer(), playheadSeconds, &muriActionCursor_);
     preparedCache_.collectMuriPadIndices(*state, muriPadCursor_.activePreparedIndices, &muriPadIndices_);
@@ -1044,12 +1070,8 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
             judgeFireworkNodeProduced = (node != nullptr);
             return node;
         });
-    if (judgeFireworkNodeProduced) {
-        // Latch it for the direct frameSwapped hook below, which is what confirms the
-        // warm-up: binding the material here only records the work, while the swap is
-        // what proves the pipeline build and texture upload actually completed
-        // (audit §6D-2). Render-thread only, same thread as the hook.
-        fireworkNodeInPendingFrame_ = true;
+    if (judgeFireworkNodeProduced && presentationBinding_) {
+        presentationBinding_->fireworkInFrame = true;
     }
     applyWindowCounts(
         "judge_firework",
@@ -1389,6 +1411,7 @@ QSGNode* PreviewQuickSceneRoot::updatePaintNode(QSGNode* oldNode, UpdatePaintNod
         preparedCache_.maimuriDxJudgeLayer().entries.size(),
         maimuriDxJudgeCursor_.activePreparedIndices.size()
     );
+    root->renderedFrame = frameKey;
     if (miacode::debug_options::previewProfileOutputEnabled()) {
         enqueueTextureStatsForPresentation(mergedTextureStats(*textures, layerProfileStats_));
     }
@@ -1438,7 +1461,10 @@ void PreviewQuickSceneRoot::logNoteLayersEmptyAnomaly(const miacode::preview::sc
     if (state.noteMarkers.isEmpty() || headActive > 0 || trackActive > 0 || touchActive > 0) {
         return;
     }
-    const auto span = miacode::preview::scene::previewNoteMarkerSpan(state.noteMarkers);
+    if (!cachedNoteMarkerSpan_.has_value()) {
+        cachedNoteMarkerSpan_ = miacode::preview::scene::previewNoteMarkerSpan(state.noteMarkers);
+    }
+    const auto& span = *cachedNoteMarkerSpan_;
     if (!miacode::preview::scene::previewNoteLayersEmptyAnomaly(
             span, state.playheadSeconds, headActive, trackActive, touchActive)) {
         return;
@@ -1519,7 +1545,28 @@ void PreviewQuickSceneRoot::recordRenderPhaseProfile()
     const double syncMs = deltaMs(syncEnd, syncStart);
     const double renderSubmitMs = deltaMs(renderEnd, renderStart);
     const double swapGpuMs = deltaMs(swapNs, renderEnd);
-    const double totalMs = deltaMs(swapNs, paintStart);
+    const bool freshPaint = paintStart > renderPhaseLastSwapNs_;
+    const double presentMs = deltaMs(swapNs, renderPhaseLastSwapNs_);
+    renderPhaseLastSwapNs_ = swapNs;
+    const double totalMs = freshPaint ? deltaMs(swapNs, paintStart) : -1.0;
+    const bool contentChanged = freshPaint
+        && (!std::isfinite(renderPhaseLastContentPlayheadSeconds_)
+            || qAbs(renderPhasePlayheadSeconds_ - renderPhaseLastContentPlayheadSeconds_) > 0.000001);
+    const double playheadStep = std::isfinite(renderPhaseLastContentPlayheadSeconds_)
+        ? renderPhasePlayheadSeconds_ - renderPhaseLastContentPlayheadSeconds_ : 0.0;
+    const double contentPresentMs = contentChanged ? deltaMs(swapNs, renderPhaseLastContentSwapNs_) : -1.0;
+    if (contentChanged) {
+        renderPhaseLastContentSwapNs_ = swapNs;
+        renderPhaseLastContentPlayheadSeconds_ = renderPhasePlayheadSeconds_;
+    }
+    double completedGpuMs = -1.0;
+    if (boundWindow_ != nullptr) {
+        auto* swapchain = static_cast<QRhiSwapChain*>(boundWindow_->rendererInterface()->getResource(
+            boundWindow_, QSGRendererInterface::RhiSwapchainResource));
+        if (swapchain != nullptr && swapchain->currentFrameCommandBuffer() != nullptr) {
+            completedGpuMs = swapchain->currentFrameCommandBuffer()->lastCompletedGpuTime() * 1000.0;
+        }
+    }
     // render_submit_ms decomposition (audit §5.1). Without this the one-second
     // first-play block is a single opaque number; with it the log says whether the
     // wait is QRhi resource work, first-use pipeline creation inside the render
@@ -1556,10 +1603,12 @@ void PreviewQuickSceneRoot::recordRenderPhaseProfile()
     // "Slow" = total frame pipeline > ~2 target intervals. Use 30ms as a fixed floor since the
     // render-thread code has no direct access to target interval and vsync is typically 16.67ms.
     constexpr double kSlowFrameMs = 30.0;
-    const bool slowFrame = totalMs >= kSlowFrameMs;
+    const bool slowFrame = freshPaint
+        && (totalMs >= kSlowFrameMs || presentMs >= kSlowFrameMs || contentPresentMs >= kSlowFrameMs);
     const bool sampleReady =
         renderPhaseLastLogMs_ < 0 || (nowMs - renderPhaseLastLogMs_) >= sampleMs;
-    if (!slowFrame && !sampleReady) {
+    // Retain each content frame to locate stalls within a dense chart section.
+    if (!freshPaint && !sampleReady) {
         return;
     }
     renderPhaseLastLogMs_ = nowMs;
@@ -1571,7 +1620,9 @@ void PreviewQuickSceneRoot::recordRenderPhaseProfile()
         QStringLiteral("render_frame_profile"),
         QString("total_ms=%1 paint_ms=%2 sync_ms=%3 pre_render_wait_ms=%4 render_submit_ms=%5 "
                 "resource_prep_ms=%6 pass_record_ms=%7 submit_tail_ms=%8 "
-                "swap_gpu_ms=%9 layer_sum_ms=%10 top_layer=%11 top_layer_ms=%12 layer_count=%13 slow=%14")
+                "swap_gpu_ms=%9 layer_sum_ms=%10 top_layer=%11 top_layer_ms=%12 layer_count=%13 slow=%14 "
+                "playhead_s=%15 present_ms=%16 fresh_paint=%17 head_active=%18 guide_active=%19 touch_active=%20 "
+                "gpu_completed_ms=%21 content_changed=%22 content_present_ms=%23 playhead_step_s=%24")
             .arg(msOrNa(totalMs))
             .arg(msOrNa(paintMs))
             .arg(msOrNa(syncMs))
@@ -1586,6 +1637,16 @@ void PreviewQuickSceneRoot::recordRenderPhaseProfile()
             .arg(QString::number(topLayerBuildMs, 'f', 3))
             .arg(layerProfileStats_.size())
             .arg(slowFrame ? 1 : 0)
+            .arg(renderPhasePlayheadSeconds_, 0, 'f', 6)
+            .arg(msOrNa(presentMs))
+            .arg(freshPaint ? 1 : 0)
+            .arg(headCursor_.activePreparedIndices.size())
+            .arg(guideCursor_.activePreparedIndices.size())
+            .arg(touchCursor_.activePreparedIndices.size())
+            .arg(msOrNa(completedGpuMs))
+            .arg(contentChanged ? 1 : 0)
+            .arg(msOrNa(contentPresentMs))
+            .arg(playheadStep, 0, 'f', 6)
     );
 
     // First frame in the process whose submit crosses the "this is the reported stall,

@@ -6,7 +6,6 @@
 #include "app/runtime/Shared.h"
 #include "app/ui/preferences/LocaleService.h"
 #include "app/services/PreferenceDocument.h"
-#include "app/services/EditorTypography.h"
 
 #include <QVariantMap>
 #include <QCoreApplication>
@@ -33,8 +32,6 @@ PreferencesModel::PreferencesModel(miacode::PreferencesStore*& storeSlot,
     , storeSlot_(&storeSlot)
     , settings_(&settings)
 {
-    completionDurations_.setHalfWidthInputEnabled(editorHalfWidthInput());
-    completionDivisions_.setHalfWidthInputEnabled(editorHalfWidthInput());
     reloadCompletionCandidates();
     connect(&settings, &WorkbenchSettings::editorSettingsChanged,
             this, &PreferencesModel::reloadCompletionCandidates);
@@ -239,11 +236,7 @@ void PreferencesModel::setEditorFontFamily(const QString& family)
 
 QVariantList PreferencesModel::editorFontOptions(const QString& filter) const
 {
-    const QString defaultFamily = miacode::editor_typography::resolveFont(QString()).family();
-    QVariantMap defaultRow = option(QString(), defaultFamily + QStringLiteral(" · ")
-                                    + qtTrId("dialog.preferences.font.default_suffix"));
-    defaultRow.insert(QStringLiteral("family"), defaultFamily);
-    QVariantList rows{defaultRow};
+    QVariantList rows{option(QString(), qtTrId("dialog.preferences.font.default"))};
     QStringList families = QFontDatabase::families();
     std::sort(families.begin(), families.end(), [](const QString& left, const QString& right) {
         return QString::localeAwareCompare(left, right) < 0;
@@ -319,8 +312,9 @@ void PreferencesModel::reloadCompletionCandidates()
 void PreferencesModel::persistCompletionCandidates()
 {
     if (store() == nullptr) return;
-    store()->applyEditorCompletionCandidates(completionDurations_.savedValues(),
-                                            completionDivisions_.savedValues(), true);
+    store()->applyEditorCompletionCandidates(
+        {completionDurations_.savedValues(), completionDivisions_.savedValues(),
+         editor::defaultCompletionConfig().durationSuffixes}, true);
 }
 
 void PreferencesModel::finishCompletionEditing()

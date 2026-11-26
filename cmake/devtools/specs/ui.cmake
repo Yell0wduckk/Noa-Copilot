@@ -1,3 +1,20 @@
+miacode_add_dev_tool(playback_shortcut_scope_spec TEST
+    SOURCES
+        src/tools/ui/PlaybackShortcutScopeSpec.cpp
+        src/app/ui/chrome/EditorInputContext.cpp
+        src/app/ui/chrome/EditorInputContext.h
+        src/app/services/ShortcutRegistry.cpp
+        src/app/ui/chrome/ShortcutModel.cpp
+    LIBS miacode_base Qt6::Quick Qt6::Qml Qt6::Test
+    INCLUDES src
+)
+qt_add_resources(playback_shortcut_scope_spec "playback_shortcut_scope"
+    PREFIX "/" BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/shortcuts.json")
+set_tests_properties(playback_shortcut_scope_spec PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_compile_definitions(playback_shortcut_scope_spec PRIVATE
+    "MIACODE_SOURCE_ROOT=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+
 miacode_add_dev_tool(appearance_translations_spec TEST
     SOURCES
         src/tools/ui/AppearanceTranslationsSpec.cpp
@@ -75,11 +92,16 @@ miacode_add_dev_tool(qml_app_background_model_spec TEST
         src/app/services/PreferenceDocument.cpp
         src/app/ui/preferences/LocaleService.h
         src/app/ui/preferences/LocaleService.cpp
+        src/app/ui/preferences/ApplicationMenuTranslation.cpp
         src/app/services/UiRequestService.h
         src/app/services/UiRequestService.cpp
     LIBS miacode_base Qt6::Core Qt6::Gui Qt6::Qml
     INCLUDES src
 )
+if(APPLE)
+    target_sources(qml_app_background_model_spec PRIVATE src/app/ui/preferences/ApplicationMenuTranslationMac.mm)
+    target_link_libraries(qml_app_background_model_spec PRIVATE "-framework AppKit")
+endif()
 
 miacode_add_dev_tool(qml_chart_drop_bridge_spec TEST
     SOURCES
@@ -97,6 +119,7 @@ miacode_add_dev_tool(document_model_save_spec TEST
         src/app/ui/document/DocumentModel.h
         src/app/ui/preferences/LocaleService.cpp
         src/app/ui/preferences/LocaleService.h
+        src/app/ui/preferences/ApplicationMenuTranslation.cpp
         src/app/services/PreferenceDocument.cpp
         src/app/services/ChartWorkspace.cpp
         src/app/services/ChartWorkspace.h
@@ -115,6 +138,10 @@ miacode_add_dev_tool(document_model_save_spec TEST
     LIBS miacode_analysis miacode_audio miacode_editor_core Qt6::Core Qt6::Gui Qt6::Qml
     INCLUDES src
 )
+if(APPLE)
+    target_sources(document_model_save_spec PRIVATE src/app/ui/preferences/ApplicationMenuTranslationMac.mm)
+    target_link_libraries(document_model_save_spec PRIVATE "-framework AppKit")
+endif()
 
 miacode_add_dev_tool(qml_document_projection_spec TEST
     SOURCES
@@ -140,6 +167,8 @@ miacode_add_dev_tool(qml_analysis_model_spec TEST
 miacode_add_dev_tool(qml_shortcut_binding_spec TEST
     SOURCES
         src/tools/ui/QmlShortcutBindingSpec.cpp
+        src/app/ui/chrome/EditorInputContext.cpp
+        src/app/ui/chrome/EditorInputContext.h
         src/app/ui/chrome/ShortcutModel.cpp
         src/app/ui/chrome/ShortcutModel.h
         src/app/ui/chrome/ShortcutCommands.h
@@ -169,9 +198,14 @@ miacode_add_dev_tool(timeline_surface_ready_spec TEST
         src/app/services/PreferenceDocument.h
         src/app/ui/preferences/LocaleService.cpp
         src/app/ui/preferences/LocaleService.h
+        src/app/ui/preferences/ApplicationMenuTranslation.cpp
     LIBS miacode_base Qt6::Core Qt6::Qml
     INCLUDES src
 )
+if(APPLE)
+    target_sources(timeline_surface_ready_spec PRIVATE src/app/ui/preferences/ApplicationMenuTranslationMac.mm)
+    target_link_libraries(timeline_surface_ready_spec PRIVATE "-framework AppKit")
+endif()
 
 miacode_add_dev_tool(qml_ui_bootstrap_lifecycle_spec TEST
     SOURCES
@@ -188,15 +222,20 @@ miacode_add_dev_tool(cover_export_session_spec TEST
         src/app/ui/export/CoverExportSession.h
         src/app/ui/preferences/LocaleService.cpp
         src/app/ui/preferences/LocaleService.h
+        src/app/ui/preferences/ApplicationMenuTranslation.cpp
         src/app/services/PreferenceDocument.cpp
         src/app/services/ProjectPreferences.cpp
         src/app/services/UiRequestService.cpp
         src/app/services/UiRequestService.h
-    LIBS miacode_export Qt6::Quick
+    LIBS miacode_export miacode_preview_quickplugin Qt6::Quick
     INCLUDES src
 )
 target_compile_definitions(cover_export_session_spec PRIVATE
     "MIACODE_SOURCE_ROOT=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+if(APPLE)
+    target_sources(cover_export_session_spec PRIVATE src/app/ui/preferences/ApplicationMenuTranslationMac.mm)
+    target_link_libraries(cover_export_session_spec PRIVATE "-framework AppKit")
+endif()
 
 miacode_add_dev_tool(qml_export_video_page_spec TEST
     SOURCES
@@ -220,9 +259,9 @@ miacode_add_dev_tool(export_file_picker_spec TEST
         src/app/ui/export/CoverExportSession.h
         src/app/ui/preferences/LocaleService.cpp
         src/app/ui/preferences/LocaleService.h
+        src/app/ui/preferences/ApplicationMenuTranslation.cpp
         src/app/services/PreferenceDocument.cpp
         src/app/services/ProjectPreferences.cpp
-        src/app/services/ExportIntroPreferences.cpp
         src/app/services/UiRequestService.cpp
         src/app/services/UiRequestService.h
         src/app/services/ShellNotifications.cpp
@@ -238,6 +277,8 @@ target_compile_definitions(export_file_picker_spec PRIVATE
     "MIACODE_QML_SPEC_IMPORT_ROOT=\"${MIACODE_QML_SPEC_IMPORT_ROOT}\"")
 miacode_enable_native_file_dialogs(export_file_picker_spec)
 if(APPLE)
+    target_sources(export_file_picker_spec PRIVATE src/app/ui/preferences/ApplicationMenuTranslationMac.mm)
+    target_link_libraries(export_file_picker_spec PRIVATE "-framework AppKit")
     set_target_properties(export_file_picker_spec PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.fanfaredash.MiaCodeFilePickerSpec"
@@ -273,6 +314,7 @@ miacode_add_dev_tool(qml_preview_rate_feedback_spec TEST
         src/app/ui/preview/PreviewModel.h
         src/app/ui/preferences/LocaleService.cpp
         src/app/ui/preferences/LocaleService.h
+        src/app/ui/preferences/ApplicationMenuTranslation.cpp
         src/app/services/PreferenceDocument.cpp
         src/app/services/PreferenceDocument.h
         src/app/services/ShellNotifications.cpp
@@ -282,6 +324,10 @@ miacode_add_dev_tool(qml_preview_rate_feedback_spec TEST
     LIBS miacode_base Qt6::Core Qt6::Gui Qt6::Qml Qt6::Test
     INCLUDES src
 )
+if(APPLE)
+    target_sources(qml_preview_rate_feedback_spec PRIVATE src/app/ui/preferences/ApplicationMenuTranslationMac.mm)
+    target_link_libraries(qml_preview_rate_feedback_spec PRIVATE "-framework AppKit")
+endif()
 
 miacode_add_dev_tool(qml_net_page_compile_spec TEST
     SOURCES src/tools/ui/QmlNetPageCompileSpec.cpp

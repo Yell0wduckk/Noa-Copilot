@@ -55,6 +55,17 @@ Rectangle {
     }
     readonly property real editorRailRightMargin:
         width - alignRailCoordinate(width, editorRailSceneX)
+    component EditorScrollThumb: Rectangle {
+        required property bool scrollActive
+        required property bool highlighted
+        implicitWidth: 6
+        implicitHeight: 6
+        radius: Math.min(width, height) / 2
+        opacity: scrollActive ? 0.5 : 0
+        color: highlighted ? Theme.colors.scroll.handleHover : Theme.colors.scroll.handle
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+    }
+
     signal normalizeChartRequested()
     signal completionSettingsRequested(string group)
     function focusEditor() { sourceArea.forceActiveFocus() }
@@ -62,6 +73,7 @@ Rectangle {
         sourceArea.forceActiveFocus()
         sourceArea.cursorPosition = sourceArea.text.length
     }
+    readonly property Item inputItem: sourceArea
     readonly property var bookmarks: sourceArea.bookmarks
     readonly property bool canUndo: sourceArea.canUndo
     readonly property bool canRedo: sourceArea.canRedo
@@ -146,6 +158,7 @@ Rectangle {
     function jumpToLine(line) { sourceArea.jumpToLine(line) }
     function openFindReplace() { findReplaceBar.show() }
     function exportSelectionRange() { sourceArea.exportSelectionRange() }
+    function exportSelectionGif() { sourceArea.exportSelectionGif() }
     function applyChartTransform(operation) { return sourceArea.applyChartTransform(operation) }
     function applyNormalization(options) { return sourceArea.applyNormalization(options) }
     function selectionDescription() {
@@ -306,8 +319,10 @@ Rectangle {
             action("qml.find_and_replace", "find")
             if (selected || normalize)
                 separator()
-            if (selected)
+            if (selected) {
                 action("qml.export_selection", "export")
+                action("export.gif.action", "export_gif")
+            }
             if (transform) {
                 separator()
                 for (const section of [0, 2]) {
@@ -342,6 +357,7 @@ Rectangle {
             case "select_all": root.selectAll(); break
             case "find": root.openFindReplace(); break
             case "export": root.exportSelectionRange(); break
+            case "export_gif": root.exportSelectionGif(); break
             case "normalize": root.normalizeChartRequested(); break
             case "noa_continue": if (root.noaCopilot) root.noaCopilot.triggerManualContinue(); break
             case "noa_full": if (root.noaCopilot) root.noaCopilot.triggerFullChartStream(); break
@@ -428,6 +444,7 @@ Rectangle {
     ScintillaEditor {
         id: sourceArea
         objectName: "sourceArea"
+        property bool chartEditorInput: true
         property bool reservesPlainSpace: true
         anchors.left: parent.left
         anchors.right: verticalBar.left
@@ -537,6 +554,23 @@ Rectangle {
         }
     }
 
+    readonly property bool scrollbarsHeld: sourceArea.activeFocus || editorHover.hovered
+        || (root.syncController && root.syncController.followPlaybackActive)
+    onScrollbarsHeldChanged: {
+        if (scrollbarsHeld) {
+            verticalScrollActivity.stop()
+            horizontalScrollActivity.stop()
+        } else {
+            if (verticalBar.interactive) verticalScrollActivity.restart()
+            if (horizontalBar.interactive) horizontalScrollActivity.restart()
+        }
+    }
+
+    HoverHandler {
+        id: editorHover
+        blocking: false
+    }
+
     AppScrollBar {
         id: verticalBar
         objectName: "sourceVerticalScrollBar"
@@ -549,32 +583,31 @@ Rectangle {
         rightPadding: 0
         orientation: Qt.Vertical
         hoverEnabled: true
+        interactive: sourceArea.vertical_scroll_max > 0
+        enabled: interactive
+        active: interactive && (root.scrollbarsHeld || hovered || pressed || verticalScrollActivity.running)
         readonly property int scrollValue: sourceArea.vertical_scroll_value
-        onScrollValueChanged: scrollActivityTimer.restart()
-        active: hovered || pressed || scrollActivityTimer.running
+        onScrollValueChanged: if (interactive && !root.scrollbarsHeld) verticalScrollActivity.restart()
+        onHoveredChanged: if (interactive && !hovered) verticalScrollActivity.restart()
         Timer {
-            id: scrollActivityTimer
+            id: verticalScrollActivity
             interval: 1200
         }
-        onPressedChanged: if (pressed) sourceArea.beginViewportInteraction()
+        onInteractiveChanged: if (!interactive) verticalScrollActivity.stop()
+        onPressedChanged: {
+            if (interactive && pressed)
+                sourceArea.beginViewportInteraction()
+            else if (interactive)
+                verticalScrollActivity.restart()
+        }
         size: sourceArea.vertical_scroll_page / root.editorRailDisplayLineCount
         position: sourceArea.vertical_scroll_value / root.editorRailDisplayLineCount
         onPositionChanged: if (pressed) sourceArea.scrollVertical(Math.round(position * root.editorRailDisplayLineCount))
-        contentItem: Item {
+        contentItem: EditorScrollThumb {
             implicitWidth: root.editorRailWidth
-            Rectangle {
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                width: root.editorRailWidth
-                radius: width / 2
-                opacity: verticalBar.active ? 0.5 : 0
-                Behavior on opacity { NumberAnimation { duration: 150 } }
-                color: verticalBar.hovered || verticalBar.pressed
-                       ? Theme.colors.scroll.handleHover
-                       : Theme.colors.scroll.handle
-                visible: verticalBar.size < 1
-            }
+            scrollActive: verticalBar.active
+            highlighted: verticalBar.hovered || verticalBar.pressed
+            visible: verticalBar.interactive
         }
         background: Item {
             id: verticalRailBackground
@@ -626,8 +659,28 @@ Rectangle {
         visible: !sourceArea.autoWrap && sourceArea.horizontal_scroll_max > 0
         height: visible ? implicitHeight : 0
         hoverEnabled: true
-        active: hovered || pressed || sourceArea.activeFocus
-        onPressedChanged: if (pressed) sourceArea.beginViewportInteraction()
+        interactive: visible && sourceArea.horizontal_scroll_max > 0
+        enabled: interactive
+        active: interactive && (root.scrollbarsHeld || hovered || pressed || horizontalScrollActivity.running)
+        readonly property int scrollValue: sourceArea.horizontal_scroll_value
+        onScrollValueChanged: if (interactive && !root.scrollbarsHeld) horizontalScrollActivity.restart()
+        onHoveredChanged: if (interactive && !hovered) horizontalScrollActivity.restart()
+        Timer {
+            id: horizontalScrollActivity
+            interval: 1200
+        }
+        onInteractiveChanged: if (!interactive) horizontalScrollActivity.stop()
+        onPressedChanged: {
+            if (interactive && pressed)
+                sourceArea.beginViewportInteraction()
+            else if (interactive)
+                horizontalScrollActivity.restart()
+        }
+        contentItem: EditorScrollThumb {
+            scrollActive: horizontalBar.active
+            highlighted: horizontalBar.hovered || horizontalBar.pressed
+            visible: horizontalBar.interactive
+        }
         size: sourceArea.horizontal_scroll_page / Math.max(1, sourceArea.horizontal_scroll_max + sourceArea.horizontal_scroll_page)
         position: sourceArea.horizontal_scroll_value / Math.max(1, sourceArea.horizontal_scroll_max + sourceArea.horizontal_scroll_page)
         onPositionChanged: if (pressed) sourceArea.scrollHorizontal(Math.round(position * (sourceArea.horizontal_scroll_max + sourceArea.horizontal_scroll_page)))

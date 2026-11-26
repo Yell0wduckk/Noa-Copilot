@@ -67,6 +67,24 @@ QtObject {
     readonly property int secondaryFontSize: uiFontSize - 1
     readonly property int captionFontSize: uiFontSize - 3
 
+    readonly property int toastTopMargin: 21
+    readonly property int toastHorizontalPadding: 14
+    readonly property int toastVerticalPadding: 10
+    readonly property int toastContentSpacing: 8
+    readonly property int toastIconSize: 16
+    readonly property int toastRadius: 8
+    readonly property int toastFontSize: Math.max(1, uiFontSize - 1)
+    readonly property int toastHoldDuration: 900
+    readonly property int toastFadeDuration: 300
+    readonly property real toastSurfaceOpacity: 1.0
+    readonly property int progressToastWidth: 340
+    readonly property int progressToastHeight: 86
+    readonly property int progressToastTopMargin: 84
+    readonly property int progressToastActionHeight: 32
+    readonly property int progressToastActionMinWidth: 52
+    readonly property int progressToastBarHeight: 4
+    readonly property int progressToastHoldDuration: 1400
+
     readonly property real surfaceOpacity: backgroundActive
         ? appBackground.panelAlpha / 255.0
         : 1.0
@@ -173,9 +191,9 @@ QtObject {
     }
 
     function chromeSurfaceColor(baseColor, materialActive = nativeMaterialActive) {
-        if (!materialActive)
-            return surfaceColor(baseColor)
-        return nativeMaterialColor(baseColor)
+        if (materialActive)
+            return nativeMaterialColor(baseColor)
+        return surfaceColor(baseColor)
     }
 
     function chromeHighlightColor(amount) {
@@ -230,6 +248,7 @@ QtObject {
     // wider invisible hit, thicker stroke only while hovered/pressed.
     readonly property int splitDividerThickness: 1
     readonly property int splitHandleActiveThickness: 3
+    readonly property int splitHandleSnapThickness: 5
     readonly property int splitHandleHitExtent: 9
     readonly property int activityButtonSize: 48
     readonly property int activityIconSize: 22
