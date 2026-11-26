@@ -100,6 +100,7 @@ public:
     QQuickWindow* visibleHostWindow() const;
     void requestActivate();
     void update();
+    void requestFramePresentation(bool forceWindowUpdate = false);
 
     void setStageMediaAvailable(bool hasMedia);
     void setStageMediaPresentationMode(
@@ -182,6 +183,7 @@ public:
     void setBackgroundBrightnessInner(double brightness);
     void setLayoutSquareScale(double scale);
     void setFireworkBrightness(double brightness);
+    void setFireworkStyle(PreviewFireworkStyle style);
     void setSmoothBrightness(bool smooth);
     void setBackgroundScaleMode(PreviewBackgroundScaleMode mode);
     void setTapFlowSpeed(double flowSpeed);
@@ -258,9 +260,10 @@ public:
     bool hasCoreSkinAssetsLoadedForDebug() const;
 
     void setFrameSize(const QSize& size);
+    // HUD snapshots include presentation counters; scene snapshots retain content identity.
     std::shared_ptr<const miacode::preview::scene::PreviewFrameState> frameStateSnapshot() const;
-    // GUI-thread builder state. QSG consumers must use
-    // frameStateSnapshot() so a frame never observes partially-mutated state.
+    std::shared_ptr<const miacode::preview::scene::PreviewFrameState> sceneFrameStateSnapshot() const;
+    // GUI-thread builder state. QSG consumers use the immutable snapshots above.
     const miacode::preview::scene::PreviewFrameState& frameState() const { return frameState_; }
     // Detailed render-side resource snapshot for the leak gauge ("key=val …"): scene content
     // revision (rebuild count), current cached/transient texture count + GPU bytes, cumulative
@@ -271,18 +274,23 @@ public:
 signals:
     void frameStateChanged();
     void framePresented();
+    void framePreparing();
+    void visibleHostRefreshRateChanged();
     void introOverlayDataChanged();
     void introOverlayStateChanged();
     void touchPadAuthoringClicked(const QString& pad, QChar separator);
 
 private:
-    void publishFrameStateSnapshot();
+    void requestFrameUpdate(bool sceneFrameChanged, bool forceWindowUpdate = false);
+    void publishFrameStateSnapshot(bool sceneFrameChanged = true);
     void handlePresentedFrame();
     void refreshAssetStateFromRepository();
     void updatePresentedFrameStats();
     // Firework PSO/texture warm-up (in-process QML preview path). See the
     // member-variable block below for the full rationale.
     void armFireworkPsoWarmupIfReady();
+    void resetFireworkWarmupForVisibleHost();
+    void bindVisibleHostScreen();
     void appendFireworkWarmupMarker();
     void removeFireworkWarmupMarkers();
     // Re-center the synthetic warm-up marker on the live playhead (no-op
@@ -292,9 +300,12 @@ private:
 
     miacode::preview::runtime::PreviewSceneAssetRepository* assets_ = nullptr;
     QPointer<QQuickWindow> visibleHostWindow_;
+    QMetaObject::Connection hostScreenConnection_;
+    QMetaObject::Connection hostRefreshRateConnection_;
     QSize frameSize_;
     miacode::preview::scene::PreviewFrameState frameState_;
     std::shared_ptr<const miacode::preview::scene::PreviewFrameState> publishedFrameState_;
+    std::shared_ptr<const miacode::preview::scene::PreviewFrameState> publishedSceneFrameState_;
     bool introOverlayActive_ = false;
     int introOverlayFrame_ = 0;
     bool introHidesChart_ = false;
@@ -304,46 +315,11 @@ private:
     QUrl introBackgroundImage_;
     QUrl introLogoImage_;
     QVariantMap introBannerStyle_;
-    // --- Firework PSO/texture warm-up (in-process QML path) ----------------
-    // Qt RHI compiles the custom PreviewQuickJudgeFireworkMaterial pipeline
-    // and uploads the firework colour-ball texture lazily on the FIRST
-    // firework draw. In a fresh session that first draw lands mid-playback
-    // when a real firework note fires, stalling the QSG render thread for
-    // ~50-300 ms. We warm this up here: once the skin assets (incl. the
-    // firework colour ball) are loaded, append a synthetic off-screen
-    // firework marker so the layer issues exactly one real textured draw
-    // at chart load — compiling the PSO + uploading the texture at a
-    // benign moment.
-    //
-    // `armed_` flips true when assets are ready. COMPLETION IS GATED ON A
-    // CONFIRMED PRESENT, not a blind present count and not a bare node emission:
-    // the scene root bumps `fireworkLayerDrawSignal_` (render thread) from a direct
-    // frameSwapped hook for each swapped frame that actually contained a firework
-    // node, and `done_` only flips once that signal has advanced past the value
-    // captured at arm (`fireworkWarmupArmDrawSignal_`) — i.e. once the synthetic
-    // has genuinely compiled the PSO, uploaded the texture AND reached the screen. To guarantee the
-    // synthetic is drawable wherever the playhead happens to be, it is
-    // RE-CENTERED on the live playhead whenever the playhead has travelled far
-    // enough to be about to leave the synthetic's lifecycle window, and on every
-    // marker refresh / reset while armed-but-not-done (its lifecycle window is
-    // fixed relative to its trigger second, so a seek / negative pre-roll /
-    // play-start would otherwise move the playhead out of the window and the
-    // layer would never draw it — the historical "probabilistic first-firework
-    // hitch"). The travel test is core/scene/PreviewFireworkWarmupPolicy.h,
-    // calibrated against the layer's real window by
-    // preview_firework_warmup_policy_spec; it replaced an unconditional
-    // per-playhead-change re-centre that cost a full PreviewPreparedSceneCache
-    // rebuild on EVERY preview frame for as long as the warm-up stayed armed.
-    // INVARIANT: while armed-but-not-done, exactly one synthetic is present in
-    // frameState_.noteMarkers and fireworkWarmupCenterSecond_ is its centre —
+    // Warm the selected style's pipelines and textures with one synthetic marker.
+    // Completion requires a presented frame containing its render node. Recenter
+    // the marker during seeks and remember completion per scene graph.
+    QHash<QQuickWindow*, bool> fireworkWarmupByWindow_;
     QVector<TimelineNoteMarker> sourceNoteMarkers_;
-    // any site that clears noteMarkers must re-append (setNoteMarkers, reset).
-    // `fireworkWarmupArmPresentCount_` + a present-count cap is only a backstop:
-    // if the firework never renders at all (layer disabled, non-rendering
-    // surface) the warm-up is abandoned so the synthetic and the per-playhead
-    // re-center work cannot linger for the whole session. Re-armed on
-    // visible-window change (a new QQuickWindow == a fresh QRhi pipeline cache,
-    // so the previously-warmed PSO/texture are gone).
     bool fireworkWarmupArmed_ = false;
     bool fireworkWarmupDone_ = false;
     qint64 fireworkWarmupArmPresentCount_ = -1;
@@ -353,18 +329,8 @@ private:
     // core/scene/PreviewFireworkWarmupPolicy.h and
     // refreshFireworkWarmupForPlayheadChange().
     double fireworkWarmupCenterSecond_ = 0.0;
-    // Monotonic count of PRESENTED frames that contained a firework-layer node,
-    // bumped on the QSG render thread (notifyFireworkLayerPresentedNode, called from
-    // a direct frameSwapped hook) and read on the GUI thread (handlePresentedFrame /
-    // armFireworkPsoWarmupIfReady) — std::atomic crosses that boundary.
-    // `armDrawSignal_` snapshots it at arm time.
-    //
-    // Counting at NODE-EMISSION time was the earlier, weaker criterion: the node is
-    // emitted during updatePaintNode, one whole render+swap before the pixels exist,
-    // while the GUI-thread completion check runs off a QUEUED frameSwapped hop that
-    // can lag a frame. That combination could retire the warm-up on a frame whose
-    // pipeline build had not actually happened yet.
-    std::atomic<quint64> fireworkLayerDrawSignal_{0};
+    // GUI-side count of presentation notifications containing a firework node.
+    quint64 fireworkLayerDrawSignal_ = 0;
     quint64 fireworkWarmupArmDrawSignal_ = 0;
     QElapsedTimer nonFinitePlayheadLogTimer_;
     quint64 nonFinitePlayheadIgnoredCount_ = 0;

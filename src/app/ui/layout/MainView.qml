@@ -26,6 +26,11 @@ Item {
     readonly property var preferencesModel: applicationContext.preferencesModel
     readonly property var latency: applicationContext.latency
     readonly property var shortcutModel: applicationContext.shortcuts
+    readonly property var inputContext: splitView.inputContext
+    readonly property bool editingCommandsAllowed: inputContext && inputContext.editingCommandsAllowed
+        && !shortcutModel.captureActive && !beginnerGuideActive
+    readonly property bool editMenuEnabled: editingCommandsAllowed
+        && (inputContext.textInput !== null || editorCommandsAvailable)
     readonly property var updates: applicationContext.update
     readonly property var noaCopilot: applicationContext.noaCopilot
     readonly property string documentTitle: {
@@ -52,6 +57,7 @@ Item {
         && !pages.overlayActive && !beginnerGuideActive
     readonly property bool chartEditorActive: documentSession.hasDocument
         && documentSession.currentDifficultyId > 0 && !pages.overlayActive && !beginnerGuideActive
+    readonly property bool chartNormalizationAvailable: chartEditorActive && splitView.canNormalizeChart()
     readonly property alias mainMenuCommands: menuCommands
     readonly property string windowTitle: titleBar.titleText
     readonly property real minimumWidth: Math.max(splitView.minimumWorkspaceWidth,
@@ -116,20 +122,27 @@ Item {
     MainMenuCommands {
         id: menuCommands
         netUploadEnabled: root.pages.netUploadEnabled
-        commandsEnabled: !root.beginnerGuideActive
-        canUndo: root.editorCommandsAvailable && splitView.canUndo
-        canRedo: root.editorCommandsAvailable && splitView.canRedo
-        canCut: root.editorCommandsAvailable && splitView.canCut
-        canCopy: root.editorCommandsAvailable && splitView.canCopy
-        canPaste: root.editorCommandsAvailable && splitView.canPaste
-        canTransform: root.editorCommandsAvailable && splitView.canTransform
+        commandsEnabled: !root.beginnerGuideActive && root.inputContext
+            && !root.inputContext.modalBlocked && !root.shortcutModel.captureActive
+        canUndo: root.editingCommandsAllowed && (root.inputContext.textInput
+            ? root.inputContext.canUndo : root.editorCommandsAvailable && splitView.canUndo)
+        canRedo: root.editingCommandsAllowed && (root.inputContext.textInput
+            ? root.inputContext.canRedo : root.editorCommandsAvailable && splitView.canRedo)
+        canCut: root.editingCommandsAllowed && (root.inputContext.textInput
+            ? root.inputContext.canCut : root.editorCommandsAvailable && splitView.canCut)
+        canCopy: root.editingCommandsAllowed && (root.inputContext.textInput
+            ? root.inputContext.canCopy : root.editorCommandsAvailable && splitView.canCopy)
+        canPaste: root.editingCommandsAllowed && (root.inputContext.textInput
+            ? root.inputContext.canPaste : root.editorCommandsAvailable && splitView.canPaste)
+        canTransform: root.editorCommandsAvailable && root.hostWindow.workbenchCommandsAllowed && splitView.canTransform
+        canFind: root.editorCommandsAvailable && root.hostWindow.workbenchCommandsAllowed
         renderModeMenuAvailable: splitView.renderModeMenuAvailable
         onExitRequested: root.requestClose()
         onUndoRequested: root.undo()
         onRedoRequested: root.redo()
-        onCutRequested: splitView.cut()
-        onCopyRequested: splitView.copy()
-        onPasteRequested: splitView.paste()
+        onCutRequested: root.editText("cut")
+        onCopyRequested: root.editText("copy")
+        onPasteRequested: root.editText("paste")
         onSelectAllRequested: root.selectAll()
         onFindRequested: splitView.showFindReplace()
         onSelectCurrentLineRequested: splitView.selectCurrentLine()
@@ -159,7 +172,7 @@ Item {
         onAboutRequested: preferencesDialog.openPage("about")
         onSetupWizardRequested: setupWizard.open()
         onPreferencesRequested: preferencesDialog.open()
-        onNewDocumentRequested: root.showOpenFileDialog()
+        onNewDocumentRequested: root.commands.newDocument()
         onOpenRecentRequested: path => root.commands.openRecentDocument(path)
         onRestoreBackupRequested: path => root.commands.restoreBackupDocument(path)
         onCloseDocumentRequested: {
@@ -178,11 +191,11 @@ Item {
 
     function toggleSidebar() {
         if (root.compact) {
-            if (!state.sidebarVisible) {
-                state.sidebarVisible = true
-                root.preferences.sidebarVisible = true
-            }
-            state.compactPanel = state.compactPanel === "sidebar" ? "" : "sidebar"
+            compactPanelLayer.toggleCompactDrawer()
+            return
+        }
+        if (compactPanelLayer.peekOpen) {
+            compactPanelLayer.dockFromPeek()
             return
         }
         state.sidebarVisible = !state.sidebarVisible
@@ -200,6 +213,9 @@ Item {
         if (!root.documentSession.hasDocument)
             return
         switch (toolId) {
+        case "balanceVolume":
+            root.mediaTools.balanceAudioVolume()
+            break
         case "convertTrack":
             root.mediaTools.convertTrackTo44100Hz()
             break
@@ -233,26 +249,36 @@ Item {
             state.activeSidebarView = "export"
         else if (page.startsWith("net-"))
             state.activeSidebarView = "network"
-        else if (state.activeSidebarView !== "tools")
+        else if (state.activeSidebarView !== "tools" && state.activeSidebarView !== "library")
             state.activeSidebarView = "chart"
     }
 
-    function undo() {
-        splitView.undo()
+    function editText(operation) {
+        if (!root.editingCommandsAllowed)
+            return
+        if (root.inputContext.textInput) {
+            root.inputContext.performEdit(operation)
+            return
+        }
+        if (root.editorCommandsAvailable)
+            splitView[operation]()
     }
 
-    function redo() {
-        splitView.redo()
-    }
+    function undo() { editText("undo") }
 
-    function selectAll() {
-        splitView.selectAll()
-    }
+    function redo() { editText("redo") }
+
+    function selectAll() { editText("selectAll") }
 
     function applyChartTransform(opId) {
         if (!root.chartEditorActive)
             return false
         return splitView.applyChartTransform(opId)
+    }
+
+    function normalizeChartWithPreferences() {
+        return root.chartNormalizationAvailable
+            && splitView.applyNormalization(root.documentSession.normalizeOptions())
     }
 
     function showUnavailableFeature(featureName) {
@@ -411,8 +437,10 @@ Item {
                 saveEnabled: root.currentEditorSaveEnabled
                 wholeDocumentSaveEnabled: root.wholeDocumentSaveEnabled
                 documentAvailable: root.documentSession.hasDocument
-                editorCommandsEnabled: root.editorCommandsAvailable
-                chartCommandsEnabled: root.chartEditorActive
+                editorCommandsEnabled: root.editMenuEnabled
+                chartCommandsEnabled: root.chartEditorActive && root.hostWindow.workbenchCommandsAllowed
+                playbackCommandsEnabled: root.hostWindow.playbackCommandsEnabled
+                    && root.hostWindow.workbenchCommandsAllowed
                 toolCommandsEnabled: root.documentSession.hasDocument
                 leadingInset: root.applicationContext.windowChrome
                     ? root.applicationContext.windowChrome.titleBarLeadingInset / Theme.uiScale
@@ -440,7 +468,7 @@ Item {
                 titleBarLeadingInset: titleBar.leadingInset
                 previewSettingsVisible: !splitView.previewDetached
                 sidebarActive: root.compact
-                               ? state.compactPanel === "sidebar"
+                               ? compactPanelLayer.peekOpen
                                : state.sidebarVisible
                 bottomActive: (state.difficultyEditorActive || state.latencyEditorActive)
                               && state.bottomPanelVisible && root.timelineSession.panelVisible
@@ -464,6 +492,7 @@ Item {
                 onSaveWholeDocumentRequested: root.saveWholeDocument()
                 onAudioSettingsRequested: audioSettingsDialog.open()
                 onPreviewSettingsRequested: previewSettingsDialog.open()
+                onShowDetachedPreviewRequested: splitView.showDetachedPreview()
                 onUnavailableFeatureRequested: featureName => root.showUnavailableFeature(featureName)
             }
         }
@@ -476,6 +505,9 @@ Item {
             MainSplitView {
                 id: splitView
                 anchors.fill: parent
+                compactLibraryHost: compactPanelLayer.libraryHost
+                drawerLibraryActive: compactPanelLayer.drawerActive
+                peekDismissOnPress: compactPanelLayer.peekOpen && !compactPanelLayer.hasBlockingPopup
                 timelineGuideActive: beginnerGuide.visible
                     && beginnerGuide.selectedSection.id === "timeline-options"
                 backgroundSource: root.backgroundSource
@@ -505,6 +537,7 @@ Item {
                 onAudioSettingsRequested: audioSettingsDialog.open()
                 onPreviewSettingsRequested: previewSettingsDialog.open()
                 onMediaToolRequested: toolId => root.runMediaTool(toolId)
+                onWorkspacePressed: compactPanelLayer.handleWorkspacePress()
             }
 
             CompactPanelLayer {
@@ -516,8 +549,19 @@ Item {
                 commands: root.commands
                 pages: root.pages
                 compact: root.compact
+                peekEnabled: (root.compact
+                    || (root.preferences.efficientSidebarEnabled
+                        && !state.sidebarVisible
+                        && !splitView.sidebarAnimating))
+                    && !root.beginnerGuideActive
+                canDock: !root.compact
+                    && root.preferences.efficientSidebarEnabled
+                    && !state.sidebarVisible
+                    && !splitView.sidebarAnimating
+                libraryPopupActive: splitView.libraryPopupActive
                 onSettingsRequested: preferencesDialog.open()
                 onMediaToolRequested: toolId => root.runMediaTool(toolId)
+                onDockRequested: splitView.dockSidebarWithoutAnimation()
             }
         }
 
@@ -624,7 +668,7 @@ Item {
         target: root.documentSession
 
         function onDocumentReplaced() {
-            if (!root.documentSession.hasDocument)
+            if (!root.documentSession.hasDocument && state.activeSidebarView !== "library")
                 state.activeSidebarView = "chart"
             state.resetEditorTabs(root.documentSession.currentDifficultyId)
             // The projection is queued, so this can run while the incoming
@@ -652,8 +696,8 @@ Item {
         target: state
 
         function onApplicationEditorActivationRequested(key) {
-            if (root.pages.activePageId !== key)
-                root.pages.openNetPage(key)
+            if (!root.pages.openNetPage(key))
+                state.cancelApplicationEditorActivation()
         }
 
         function onActiveEditorKeyChanged() {
@@ -675,7 +719,8 @@ Item {
             }
             root.commands.selectDifficulty(difficultyId)
             root.pages.ensureDifficultyPageActive(difficultyId)
-            state.activeSidebarView = "chart"
+            if (state.activeSidebarView !== "library")
+                state.activeSidebarView = "chart"
         }
 
         function onEditorPresentationCleared() {
@@ -694,7 +739,7 @@ Item {
         }
 
         function onNetPageActivated(page) {
-            state.openEditor(page)
+            state.confirmApplicationEditor(page)
         }
 
         function onActivePageIdChanged() {
@@ -708,10 +753,12 @@ Item {
             root.pendingDifficultyActivation = 0
             root.commands.selectDifficulty(difficultyId)
             root.pages.ensureDifficultyPageActive(difficultyId)
-            state.activeSidebarView = "chart"
+            if (state.activeSidebarView !== "library")
+                state.activeSidebarView = "chart"
         }
 
         function onNavigationRejected() {
+            state.cancelApplicationEditorActivation()
             root.pendingDifficultyActivation = 0
             root.syncSidebarViewToPage()
         }
@@ -871,7 +918,7 @@ Item {
                 title: qsTrId("guide.editor.title"),
                 columns: 1,
                 features: [
-                    { icon: Qt.resolvedUrl("icons/metadata.svg"), label: qsTrId("guide.editor.metadata_save") },
+                    { icon: Qt.resolvedUrl("icons/wand.svg"), label: qsTrId("guide.editor.normalize") },
                     { kind: "code", sample: "|| 3/4", label: qsTrId("guide.editor.measure") },
                     { kind: "code", sample: "|||", label: qsTrId("guide.editor.comment") },
                     { kind: "code", sample: "|| [A]", label: qsTrId("guide.editor.bookmark") }
@@ -1014,6 +1061,7 @@ Item {
         objectName: "shellPreferencesDialog"
         onCompletionSettingsClosed: splitView.sourceEditorItem.focusEditor()
         preferencesModel: root.preferencesModel
+        previewSettings: root.applicationContext.previewSettings
         shortcuts: root.shortcutModel
         preferences: root.preferences
         appBackground: root.appBackground

@@ -186,6 +186,7 @@ public:
     Q_INVOKABLE bool beginGuidePracticeDocument();
     Q_INVOKABLE void endGuidePracticeDocument();
     bool guidePracticeDocumentActive() const { return guidePracticeDocumentActive_; }
+    bool openChartFile(const QUrl& fileUrl, int preferredDifficultyId = 0);
     QJsonObject documentIdentity() const;
     net::NetEnginePort::Cancel openNetPreview(const QString& path, const QJsonObject& expected,
                                              net::NetEnginePort::Done done);
@@ -275,7 +276,7 @@ signals:
     void guidePracticeDocumentActiveChanged();
 
 private:
-    bool openFileWithOrigin(const QUrl& fileUrl, ChartDocumentOrigin origin);
+    bool openFileWithOrigin(const QUrl& fileUrl, ChartDocumentOrigin origin, int preferredDifficultyId = 0);
     mutable QString workspaceId_;
     enum class WorkspaceCommitKind {
         Incremental,

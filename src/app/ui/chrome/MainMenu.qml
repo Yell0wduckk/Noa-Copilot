@@ -23,6 +23,7 @@ Item {
     property bool documentAvailable: true
     property bool editorCommandsEnabled: true
     property bool chartCommandsEnabled: true
+    property bool playbackCommandsEnabled: true
     property bool toolCommandsEnabled: true
     property bool nativeMenuMode: false
     // Re-read each time the menu opens rather than kept live: the list only
@@ -78,6 +79,13 @@ Item {
         if (root._activeMenu && root._activeMenu.visible)
             root._activeMenu.close()
         root._activeMenu = null
+    }
+
+    // Close the menu tree before a tool opens its modal dialog. Otherwise the
+    // parent of the triggering submenu stays open behind the dialog.
+    function requestMediaTool(toolId) {
+        root.closeActiveMenu()
+        root.commands.mediaToolRequested(toolId)
     }
 
     function toggleAnchoredMenu(menu, anchor) {
@@ -302,6 +310,15 @@ Item {
             // shortcuts on one sequence are ambiguous to Qt, which then fires
             // NEITHER. qml_shortcut_binding_spec guards the whole class.
             AppMenuAction {
+                text: qsTrId("action.new")
+                shortcut: root.shortcuts.revision >= 0
+                    ? root.shortcuts.sequence("file.new", "Ctrl+Shift+N")
+                    : ""
+                shortcutText: root.shortcuts.displayText("file.new", "Ctrl+Shift+N")
+                enabled: root.commandsEnabled
+                onTriggered: root.commands.newDocumentRequested()
+            }
+            AppMenuAction {
                 text: qsTrId("action.open")
                 shortcut: root.shortcuts.revision >= 0
                     ? root.shortcuts.sequence("file.open", "Ctrl+Shift+O")
@@ -449,7 +466,7 @@ Item {
                 text: qsTrId("metadata.find")
                 shortcut: StandardKey.Find
                 shortcutText: root.shortcuts.standardDisplayText(StandardKey.Find)
-                enabled: root.commandsEnabled && root.editorCommandsEnabled
+                enabled: root.commandsEnabled && root.commands.canFind
                 onTriggered: root.commands.findRequested()
             }
             AppMenuAction {
@@ -461,7 +478,7 @@ Item {
             }
             AppMenuAction {
                 text: qsTrId("qml.select_current_line")
-                enabled: root.commandsEnabled && root.editorCommandsEnabled
+                enabled: root.commandsEnabled && root.commands.canFind
                 onTriggered: root.commands.selectCurrentLineRequested()
             }
             AppMenuSeparator {}
@@ -485,12 +502,12 @@ Item {
             AudioProcessingMenu {
                 enabled: root.commandsEnabled && root.documentAvailable
                 documentAvailable: root.documentAvailable
-                onToolRequested: toolId => root.commands.mediaToolRequested(toolId)
+                onToolRequested: toolId => root.requestMediaTool(toolId)
             }
             VideoProcessingMenu {
                 enabled: root.commandsEnabled && root.documentAvailable
                 documentAvailable: root.documentAvailable
-                onToolRequested: toolId => root.commands.mediaToolRequested(toolId)
+                onToolRequested: toolId => root.requestMediaTool(toolId)
             }
         }
 
@@ -616,7 +633,7 @@ Item {
                     ? root.shortcuts.sequence("preview.speed_down", "Ctrl+O")
                     : ""
                 shortcutText: root.shortcuts.displayText("preview.speed_down", "Ctrl+O")
-                enabled: root.commandsEnabled && root.chartCommandsEnabled
+                enabled: root.commandsEnabled && root.playbackCommandsEnabled
                 onTriggered: root.commands.previewRateStepRequested(-1)
             }
             AppMenuAction {
@@ -625,7 +642,7 @@ Item {
                     ? root.shortcuts.sequence("preview.speed_up", "Ctrl+P")
                     : ""
                 shortcutText: root.shortcuts.displayText("preview.speed_up", "Ctrl+P")
-                enabled: root.commandsEnabled && root.chartCommandsEnabled
+                enabled: root.commandsEnabled && root.playbackCommandsEnabled
                 onTriggered: root.commands.previewRateStepRequested(1)
             }
             AppMenuSeparator {}

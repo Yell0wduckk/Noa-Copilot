@@ -88,8 +88,8 @@ Item {
         root.previewSession.updateScrub(second)
     }
     property bool scrubActive: false
-    property real activeScrubSecond: root.previewSession.positionSeconds
-    readonly property real displayedSeconds: root.dataAvailable
+    property real activeScrubSecond: 0
+    readonly property real displayedSeconds: root.visible && root.dataAvailable
         ? (root.scrubActive ? root.activeScrubSecond : root.previewSession.positionSeconds)
         : 0
 
@@ -160,7 +160,7 @@ Item {
         property: "value"
         // 范围重建时按当前进度定位，涵盖位置数值保持不变的页面切换。
         value: Math.max(progress.from, Math.min(progress.to, root.previewSession.positionSeconds))
-        when: !progress.pressed && !root.scrubActive
+        when: root.visible && !progress.pressed && !root.scrubActive
     }
 
     MouseArea {
@@ -197,10 +197,12 @@ Item {
         spacing: 5
         layoutDirection: root.transportMirrored ? Qt.RightToLeft : Qt.LeftToRight
 
+        // Transport clicks leave keyboard focus where it is, usually the chart editor.
         IconButton {
             id: stopButton
             Layout.preferredWidth: implicitWidth
             Layout.preferredHeight: implicitHeight
+            focusPolicy: Qt.TabFocus
             iconSource: Qt.resolvedUrl("icons/stop.svg")
             tooltip: qsTrId("preview.stop")
             onClicked: root.previewSession.stop()
@@ -211,6 +213,7 @@ Item {
             focusPolicy: Qt.StrongFocus
             Layout.preferredWidth: implicitWidth
             Layout.preferredHeight: implicitHeight
+            focusPolicy: Qt.TabFocus
             iconSource: Qt.resolvedUrl(root.previewSession.playing ? "icons/pause.svg" : "icons/play.svg")
             tooltip: root.previewSession.playing ? qsTrId("preview.pause") : qsTrId("preview.play")
             onClicked: root.previewSession.playing = !root.previewSession.playing
@@ -240,6 +243,7 @@ Item {
                         > root.exportSession.exportStartSeconds
             Layout.preferredWidth: implicitWidth
             Layout.preferredHeight: implicitHeight
+            focusPolicy: Qt.TabFocus
             iconSource: Qt.resolvedUrl("icons/range-play.svg")
             filledIconSource: Qt.resolvedUrl("icons/range-play-active.svg")
             active: root.exportSession.rangePlaybackEnabled
