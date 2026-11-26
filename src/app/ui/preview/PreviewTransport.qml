@@ -210,7 +210,6 @@ Item {
         IconButton {
             id: playButton
             objectName: "previewPlayPauseButton"
-            focusPolicy: Qt.StrongFocus
             Layout.preferredWidth: implicitWidth
             Layout.preferredHeight: implicitHeight
             focusPolicy: Qt.TabFocus
